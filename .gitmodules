@@ -1,0 +1,3 @@
+[submodule "SessionSim"]
+	path = SessionSim
+	url = https://github.com/lakazatong/SessionSim
