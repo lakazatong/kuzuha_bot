@@ -65,11 +65,15 @@ gamemode_texts = {
 }
 
 rank_emotes = [
-	":hearts:", # SSH
-	":thumbsup:", # SS
-	":ok_hand:", # SH
-	":no_entry_sign:", # S
-	":x:" # A
+	"<:EmoteName:1119114513116053646>", # SSH
+	"<:EmoteName:1119114470405447810>", # SS
+	"<:EmoteName:1119114470405447810>", # SH
+	"<:EmoteName:1119114490898829324>", # S
+	"<:EmoteName:1119114525589897317>", # A
+	"<:EmoteName:1119114536620924988>", # A
+	"<:EmoteName:1119114548566298716>", # A
+	"<:EmoteName:1119114559899316336>", # A
+	"<:EmoteName:1119114572616433694>", # A
 ]
 
 async def build_osu_profile_embed(ctx, user_info, mode):
@@ -108,7 +112,7 @@ async def build_osu_profile_embed(ctx, user_info, mode):
 		info += f"▸ **Peak Rank:** #{peak_rank:,} achieved `{peak_rank_achieved}`\n"
 
 	info += f"▸ **Level:** {level} + {level_progress:.2f}%\n"
-	info += f"▸ **PP**: {pp:,} **Acc**: {round(acc, 2)}%\n"
+	info += f"▸ **PP**: {pp:.2f} **Acc**: {round(acc, 2)}%\n"
 	if playcount == 0:
 		info += f"▸ **Playcount:** {playcount:,}\n"
 	else:
