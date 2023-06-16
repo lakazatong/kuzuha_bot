@@ -65,15 +65,15 @@ gamemode_texts = {
 }
 
 rank_emotes = [
-	"<:EmoteName:1119114513116053646>", # SSH
-	"<:EmoteName:1119114470405447810>", # SS
-	"<:EmoteName:1119114470405447810>", # SH
-	"<:EmoteName:1119114490898829324>", # S
-	"<:EmoteName:1119114525589897317>", # A
-	"<:EmoteName:1119114536620924988>", # A
-	"<:EmoteName:1119114548566298716>", # A
-	"<:EmoteName:1119114559899316336>", # A
-	"<:EmoteName:1119114572616433694>", # A
+	"<:EmoteName:1119272076730175558>", # SSH
+	"<:EmoteName:1119272089971605504>", # SS
+	"<:EmoteName:1119272112138506331>", # SH
+	"<:EmoteName:1119272128055881739>", # S
+	"<:EmoteName:1119272145567092756>", # A
+	"<:EmoteName:1119272157965463573>", # B
+	"<:EmoteName:1119272169424310384>", # C
+	"<:EmoteName:1119272235945963590>", # D
+	"<:EmoteName:1119272252337295420>", # F
 ]
 
 async def build_osu_profile_embed(ctx, user_info, mode):
