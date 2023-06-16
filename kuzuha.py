@@ -92,7 +92,6 @@ async def build_osu_profile_embed(ctx, user_info, mode):
 	
 	bancho_rank = user_info['bancho_rank']
 	peak_rank = user_info['peak_rank']
-	peak_rank_achieved = user_info['peak_rank_achieved']
 	level = user_info['level']
 	level_progress = user_info['level_progress']
 	pp = user_info['pp']
@@ -109,7 +108,8 @@ async def build_osu_profile_embed(ctx, user_info, mode):
 		info += f"▸ **Bancho Rank:** {bancho_rank} ({country_code})\n"
 
 	if user_info['peak_rank'] != None:
-		info += f"▸ **Peak Rank:** #{peak_rank:,} achieved `{peak_rank_achieved}`\n"
+		peak_rank_achieved = user_info['peak_rank_achieved']
+		info += f"▸ **Peak Rank:** #{peak_rank:,} achieved <t:{peak_rank_achieved}:R>\n"
 
 	info += f"▸ **Level:** {level} + {level_progress:.2f}%\n"
 	info += f"▸ **PP**: {pp:.2f} **Acc**: {round(acc, 2)}%\n"

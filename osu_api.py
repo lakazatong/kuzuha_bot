@@ -50,7 +50,7 @@ class OsuAPI:
 			
 			"country_rank": user['statistics']['country_rank'] if 'country_rank' in user['statistics'] else None,
 			"peak_rank": user['rank_highest']['rank'] if user['rank_highest'] != None else None,
-			"peak_rank_achieved": format_time_ago(user['rank_highest']['updated_at'], '%Y-%m-%dT%H:%M:%SZ') if user['rank_highest'] != None else None,
+			"peak_rank_achieved": convert_to_unix_time(user['rank_highest']['updated_at'], '%Y-%m-%dT%H:%M:%SZ') if user['rank_highest'] != None else None,
 
 			"level": user['statistics']['level']['current'],
 			"level_progress": user['statistics']['level']['progress'],
