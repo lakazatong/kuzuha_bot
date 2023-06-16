@@ -3,9 +3,11 @@
 https://discord.com/api/oauth2/authorize?client_id=1103140474375647303&permissions=8&redirect_uri=https%3A%2F%2Fdiscord.com%2F&response_type=code&scope=applications.commands%20bot%20guilds%20guilds.members.read%20identify%20messages.read
 '''
 
-from osu_api import *
 import discord
 from discord.ext import commands
+import sys
+sys.path.append('libs')
+from osu_api import *
 
 users = {}
 users_cache_path = 'users.json'
@@ -170,4 +172,4 @@ async def ctb(ctx, username=''):
 async def mania(ctx, username=''):
 	await card_cmd(ctx, username, 'mania')
 
-bot.run(str(open('token', 'r').read()))
+bot.run(str(open('secrets/token', 'r').read()))

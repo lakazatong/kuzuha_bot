@@ -1,4 +1,4 @@
-token
-avatar-image.png
+secrets
 __pycache__
-test*
+*test*
+info_raw*
