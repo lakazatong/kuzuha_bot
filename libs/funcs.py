@@ -1,7 +1,9 @@
-import os, time, inspect, json, urllib.parse, re, platform, threading
+import os, time, inspect, json, urllib.parse, re, platform, threading, sys, importlib
 from pprint import pprint
 from datetime import datetime, timezone
 from math import *
+# source : https://github.com/Francesco149/pyttanko/blob/master/pyttanko.py
+from pyttanko import *
 
 try:
 	from bs4 import BeautifulSoup
@@ -18,6 +20,38 @@ try:
 except:
 	os.system('pip install pytz')
 	import pytz
+
+# def get_importing_file_paths():
+# 	caller_frames = inspect.stack()[1:]  # Exclude the current frame (X)
+# 	paths = []
+# 	for frame_info in caller_frames:
+# 		frame = frame_info.frame
+# 		module = inspect.getmodule(frame)
+# 		if module: paths.append(module.__file__)
+# 	return paths[1:]
+
+# def import_functions_from_path(module_path):
+# 	directory = os.path.dirname(module_path)
+# 	sys.path.append(directory)
+# 	module_name = os.path.splitext(os.path.basename(module_path))[0]
+# 	spec = importlib.util.spec_from_file_location(module_name, module_path)
+# 	imported_module = importlib.util.module_from_spec(spec)
+# 	spec.loader.exec_module(imported_module)
+# 	functions = [getattr(imported_module, name) for name in dir(imported_module) if callable(getattr(imported_module, name))]
+# 	return functions
+
+# def find_function(functions, function_name):
+# 	for func in functions:
+# 		if func.__name__ == function_name:
+# 			return func
+# 	return None
+
+_exit = exit
+def exit_with_function(code, exit_function=None):
+	if exit_function:
+		try: exit_function()
+		except: pass
+	_exit(code)
 
 def from_windows():
 	return platform.system() == 'Windows'
@@ -182,19 +216,19 @@ def encode_url(url):
 	return urllib.parse.quote(url)
 
 def code_to_txt(code):
-	return code.replace('	', '\\t').replace('''
+	return code.replace('   ', '\\t').replace('''
 ''', '\\n')
 
 def txt_to_code(code):
 	code.replace('\\\\t', '\\t')
 	code.replace('\\\\n', '\\n')
-	return code.replace('\\t', '	').replace('\\n', '''
+	return code.replace('\\t', '    ').replace('\\n', '''
 ''')
 
 def get_from_link(original_link, key):
 	link = original_link
 	index = link.find(key)
-	if index == -1:	return None
+	if index == -1: return None
 	end = link[index+len(key):].find('&')
 
 def build_get_url(base_url, params):
@@ -286,6 +320,23 @@ def split_path(path):
 def run(func, delay):
 	timer = threading.Timer(delay, func)
 	timer.start()
+	return timer
+
+def match_aliases(x, aliases):
+	for key, values in aliases.items():
+		if x in values:
+			return key
+	return None
+
+class list(list):
+	def get(self, element):
+		for i in range(len(self)):
+			if self[i] == element:
+				return i
+		return -1
+	def delete(self, element):
+		if element in self: self.remove(element)
+
 
 # source : https://stackoverflow.com/a/15513483
 orig_prettify = BeautifulSoup.prettify
@@ -293,6 +344,7 @@ r = re.compile(r'^(\s*)', re.MULTILINE)
 def prettify(self, encoding=None, formatter="minimal", indent_width=4):
 	return r.sub(r'\1' * indent_width, orig_prettify(self, encoding, formatter))
 BeautifulSoup.prettify = prettify
+
 
 
 # ------------------- old -------------------
