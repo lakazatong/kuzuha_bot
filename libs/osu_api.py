@@ -1,6 +1,6 @@
-import requests
-from funcs import *
-from pyttanko import *
+from libs.utils.all import *
+# source : https://github.com/Francesco149/pyttanko/blob/master/pyttanko.py
+from libs.pyttanko import *
 
 v1, v2 = None, None
 def exit_function():
@@ -145,13 +145,13 @@ class OsuAPI_v2:
 		"Content-Type": "application/x-www-form-urlencoded",
 	}
 
-	def update_tokens(self, response):
-		self.refresh_token = response['refresh_token']
+	def update_tokens(self, r):
+		self.refresh_token = r['refresh_token']
 		with open('secrets/osu_api_v2_refresh_token', 'w+') as f:
 			f.write(self.refresh_token)
-		self.json_headers['Authorization'] = response['token_type'] + ' ' + response['access_token']
-		self.urlencoded_headers['Authorization'] = response['token_type'] + ' ' + response['access_token']
-		self.refresh_token_thread = run(self.refresh_tokens, delay=int(response['expires_in']))
+		self.json_headers['Authorization'] = r['token_type'] + ' ' + r['access_token']
+		self.urlencoded_headers['Authorization'] = r['token_type'] + ' ' + r['access_token']
+		self.refresh_token_thread = run(self.refresh_tokens, delay=int(r['expires_in']))
 
 	def first_manual_startup(self):
 		params = {
@@ -169,19 +169,24 @@ class OsuAPI_v2:
 			# escape the '&' characters
 			url = url.replace('&', '^&')
 			os.system(f'cmd.exe /C "start {url}"')
-		code = input('Enter the received code contained in the url after Authorizing:\n')
+		code = input('OsuAPI_v2: Enter the received code contained in the url after Authorizing:\n')
 		params = {
 			"client_id": self.client_id,
 			"code": code,
 			"grant_type": "authorization_code",
 			"redirect_uri": self.redirect_uri
 		}
-		data = build_get_data(params)
-		response = json.loads(requests.request('POST', 'https://osu.ppy.sh/oauth/token', headers=self.urlencoded_headers, data=data).content)
-		self.update_tokens(response)
+		data = build_post_data(params)
+		r = requests.request('POST', 'https://osu.ppy.sh/oauth/token', headers=self.urlencoded_headers, data=data)
+		content = json.loads(r.content)
+		if r.status_code != 200:
+			report_request_error(r, content=content)
+			exit()
+		else:
+			self.update_tokens(content)
 
 	def refresh_tokens(self):
-		print('v2: refreshing token... ', end='')
+		print('OsuAPI_v2: refreshing token... ', end='')
 		params = {
 			"client_id": self.client_id,
 			"client_secret": self.client_secret,
@@ -189,10 +194,30 @@ class OsuAPI_v2:
 			"refresh_token": self.refresh_token,
 			"scope": "public+identify"
 		}
-		data = build_get_data(params)
+		data = build_post_data(params)
 		r = requests.request('POST', 'https://osu.ppy.sh/oauth/token', headers=self.token_headers, data=data)
-		self.update_tokens(json.loads(r.content))
-		cprint('done', GREEN)
+		content = json.loads(r.content)
+		error_msg = None
+		if r.status_code != 200:
+			if 'error_description' in content:
+				if 'the refresh token is invalid' in content['error_description'].lower():
+					with open('secrets/osu_api_v2_client_secret', 'w+') as f:
+						f.write(input('OsuAPI_v2: The refresh token probably expired, reset your client secret and enter the new one:\n'))
+					self.first_manual_startup()
+				elif 'client authentication failed' in content['error_description'].lower():
+					error_msg = 'OsuAPI_v2: Probably too many authentication requests were sent, retry again later'
+				else:
+					error_msg = 'OsuAPI_v2: Unknown error description'
+			else:
+				error_msg = 'OsuAPI_v2: Unknown error'
+		if error_msg:
+			cprint('failed', RED)
+			print(error_msg)
+			report_request_error(r, content=content)
+			exit()
+		else:
+			self.update_tokens(content)
+			cprint('done', GREEN)
 
 	def __init__(self):
 		# init constants
@@ -250,7 +275,7 @@ class OsuAPI_v2:
 		if self.refresh_token_thread:
 			self.refresh_token_thread.cancel()
 		else:
-			cprint('v2: reached impossible statement?', RED)
+			cprint('OsuAPI_v2: reached impossible statement?', RED)
 
 # --------------------------------------------------------------------------- #
 

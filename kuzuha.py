@@ -12,9 +12,6 @@ import discord
 from discord.ext import commands
 from libs.osu_api import *
 
-bot = None
-osu_api = None
-
 ########################################### data ###########################################
 
 users = {}
@@ -51,7 +48,6 @@ rank_emotes = {
 ########################################### osuset ###########################################
 
 async def load_users():
-	global users
 	if os.path.exists(users_cache_path):
 		with open(users_cache_path, 'r') as f:
 			users = json.loads(f.read())
@@ -60,7 +56,10 @@ async def save_users():
 	with open(users_cache_path, 'w+') as f: 
 		f.write(json.dumps(users, indent=3))
 
-async def osuset_cmd():
+def get_username(discord_user_id):
+	return users.get(discord_user_id if type(discord_user_id) is str else str(discord_user_id))
+
+async def osuset_cmd(username):
 	user_info = osu_api.user_info(username)
 	if user_info:
 		users[str(ctx.message.author.id)] = username
@@ -190,114 +189,6 @@ Arguments:
 '''
 )
 
-def user_score_embed_txts(user_score, mode):
-	top_txt = f'**Recent {gamemode_texts[mode]} Play for {user_score['user']['username']}:**'
-	beatmap_info = osu_api.beatmap_info(user_score['beatmap']['id'])
-	stats = user_score['statistics']
-	score_stats = score_stats(user_score, beatmap_info['id'])
-	pp_value, acc_value, max_combo = score_stats['pp']['total'], score_stats['acc'], score_stats['max_combo']
-	score_stats = score_stats(user_score, beatmap_info['id'], True, max_combo)
-	pp_value_fc, acc_value_fc = score_stats['pp']['total'], score_stats['acc']
-	mods_text = ''.join(beatmap_info['mods'])
-	if mods_text == '': mods_text = 'No Mod'
-	n300, n100, n50, nMiss = stats['count_300'], stats['count_100'], stats['count_50'], stats['count_miss']
-	nGeki, nKatu = stats['count_geki'], stats['count_katu']
-	match mode:
-		case 'osu' | 'fruits':
-			hits_txt = f'[{n300}/{n100}/{n50}/{nMiss}]'
-		case 'taiko':
-			hits_txt = f'[{n300}/{n100}/{nMiss}]'
-		case 'mania':
-			hits_txt = f'[{nGeki}/{n300}/{nKatu}/{n100}/{n50}/{nMiss}]'
-	map_txt = f'{beatmap_info['title']} [{beatmap_info['version']}] +{mods_text} [{beatmap_info['difficulty_rating']:.2f}★]'
-	if rank == 'F':
-		progress_value =(n300+n100+n50+nMiss)/\
-						(beatmap_info['count_circles']+beatmap_info['count_sliders']+beatmap_info['count_spinners'])*100s
-		pp_txt = f'▸ {rank_emotes[rank]} ({progress_value:.2f}%) ▸ **{pp_value:.2f}PP** ({pp_value_fc:.2f}pp for {acc_value_fc:.2f}% FC) ▸ {acc_value:.2f}%'
-	else:
-		pp_txt = f'▸ {rank_emotes[rank]} ▸ **{pp_value:.2f}PP** ({pp_value_fc:.2f}pp for {acc_value_fc:.2f}% FC) ▸ {acc_value:.2f}%'
-
-	score_txt = f'▸ {user_score['score']:,} ▸ x{user_score['max_combo']}/{max_combo} ▸ {hits_txt}'
-	try_count = 1
-	for i in range(index+1, len(user_recents)):
-		if user_recents[i]['beatmap']['id'] == beatmap_id: try_count += 1
-		else: break
-	
-	replay_txt = ''
-	if user_score['replay']:
-		replay_txt = f' ▸ `[Replay](https://osu.ppy.sh/scores/taiko/{user_score['id']}/download`)'
-	if user_score['created_at']:
-		ago_value = convert_to_unix_time(user_score['created_at'], '%Y-%m-%dT%H:%M:%SZ')
-		bottom_txt = f'Try #{try_count} ▸ <t:{ago_value}:R> ago{replay_txt}'
-	else:
-		bottom_txt = f'Try #{try_count}{replay_txt}'
-
-	return top_txt, map_txt, pp_txt, score_txt, bottom_txt
-
-def build_recents_embed(ctx, user_recents, mode, index):
-	user_score = user_recents[index]
-	beatmap_info, pp_text, pp_fc_text, acc_text, mods_text, stats = user_score_embed_txts(user_score, mode)
-	rank = user_score['rank']
-	beatmapset_id = beatmap_info['beatmapset_id']
-	beatmap_id = beatmap_info['id']
-	info = ''
-	try_text = ''
-	
-	info += f'▸ {user_score['score']} ▸ x{user_score['max_combo']}/{beatmap_info['max_combo']} ▸ {hits_txt}'
-	em = discord.Embed(description=info, colour=ctx.message.author.colour)
-	em.set_author(
-		name=, 
-		url=f'https://osu.ppy.sh/beatmapsets/{beatmapset_id}#osu/{beatmap_id}',
-		icon_url=user_info['avatar_url'])
-	em.set_thumbnail(url=f'https://b.ppy.sh/thumb/{beatmapset_id}l.jpg')
-		
-	time_ago_text = format_time_ago(user_score['created_at'], )
-
-	em.set_footer(text = f"{try_text}On osu! Bancho Server • {time_ago_text}", icon_url='https://i.imgur.com/Req9wGs.png')
-	return embed
-
-def build_recents_list_embed(ctx, user_recents, mode, passed):
-	beatmap_info, F_rank, progress_text, pp_text, pp_fc_text, acc_text, mods_text = get_recents_embed_info(user_recents[index])
-	beatmapset_id = beatmap_info['beatmapset_id']
-	beatmap_id = beatmap_info['id']
-	
-	info = ""
-	if F_rank:
-		info += f'▸ {rank_emotes[rank]} ({progress_text:.1f}%) ▸ **{pp_text:.2f}** ({pp_text:.2f}) ▸ {acc_text:.2f}%\n'
-	else:
-		info += f'▸ {rank_emotes[rank]} ▸ **{pp_text:.2f}** ({pp_text:.2f}) ▸ {acc_text:.2f}%\n'
-
-	em = discord.Embed(description=info, colour=ctx.message.author.colour)
-	em.set_author(
-		name=f'**Recent {gamemode_texts[mode]} Plays for {user_info['username']}:**', 
-		url=f'https://osu.ppy.sh/beatmapsets/{beatmapset_id}#{beatmap_info['mode']}/{beatmap_id}',
-		icon_url=user_info['avatar_url'])
-	em.set_thumbnail(url=f'https://b.ppy.sh/thumb/{beatmapset_id}l.jpg')
-
-	try_text = ''
-	if F_rank:
-		try_count = 1
-		for i in range(index+1, len(user_recents)):
-			if user_recents[i]['beatmap']['id'] == beatmap_id: try_count += 1
-			else: break
-		
-	time_ago_text = format_time_ago(user_score['created_at'], '%Y-%m-%dT%H:%M:%SZ')
-
-	em.set_footer(text = bottom_txt, icon_url='https://i.imgur.com/Req9wGs.png')
-
-	embed_data = [
-		{"title": "Page 1", "description": "This is the content of page 1."},
-		{"title": "Page 2", "description": "This is the content of page 2."},
-		{"title": "Page 3", "description": "This is the content of page 3."}
-	]
-
-	pages = []
-	for data in embed_data:
-		embed = discord.Embed(title=data["title"], description=data["description"])
-		pages.append(embed)
-
-	return pages
-
 async def parse_recent_arguments(ctx):
 	msg = ctx.message.content
 	msg = msg.strip()
@@ -376,6 +267,129 @@ async def parse_recent_arguments(ctx):
 
 	return True, usernames, passed, mode, list_, best, index, search
 
+def user_score_embed_txts(user_score, mode):
+	username = user_score['user']['username']
+	top_txt = f'**Recent {gamemode_texts[mode]} Play for {username}:**'
+	beatmap_info = osu_api.beatmap_info(user_score['beatmap']['id'])
+	stats = user_score['statistics']
+	score_stats = score_stats(user_score, beatmap_info['id'])
+	pp_value, acc_value, max_combo = score_stats['pp']['total'], score_stats['acc'], score_stats['max_combo']
+	score_stats = score_stats(user_score, beatmap_info['id'], True, max_combo)
+	pp_value_fc, acc_value_fc = score_stats['pp']['total'], score_stats['acc']
+	mods_text = ''.join(beatmap_info['mods'])
+	if mods_text == '': mods_text = 'No Mod'
+	n300, n100, n50, nMiss = stats['count_300'], stats['count_100'], stats['count_50'], stats['count_miss']
+	nGeki, nKatu = stats['count_geki'], stats['count_katu']
+	match mode:
+		case 'osu' | 'fruits':
+			hits_txt = f'[{n300}/{n100}/{n50}/{nMiss}]'
+		case 'taiko':
+			hits_txt = f'[{n300}/{n100}/{nMiss}]'
+		case 'mania':
+			hits_txt = f'[{nGeki}/{n300}/{nKatu}/{n100}/{n50}/{nMiss}]'
+	beatmap_title = beatmap_info['title']
+	beatmap_version = beatmap_info['version']
+	beatmap_sr = beatmap_info['difficulty_rating']
+
+	map_txt = f'{beatmap_title} [{beatmap_version}] +{mods_text} [{beatmap_sr:.2f}★]'
+	rank_emote = rank_emotes[rank]
+	if rank == 'F':
+		progress_value =(n300+n100+n50+nMiss)/\
+						(beatmap_info['count_circles']+beatmap_info['count_sliders']+beatmap_info['count_spinners'])*100
+		
+		pp_txt = f'▸ {rank_emote} ({progress_value:.2f}%) ▸ **{pp_value:.2f}PP** ({pp_value_fc:.2f}pp for {acc_value_fc:.2f}% FC) ▸ {acc_value:.2f}%'
+	else:
+		pp_txt = f'▸ {rank_emote} ▸ **{pp_value:.2f}PP** ({pp_value_fc:.2f}pp for {acc_value_fc:.2f}% FC) ▸ {acc_value:.2f}%'
+
+	user_score_score = user_score['score']
+	user_score_max_combo = user_score['max_combo']
+	score_txt = f'▸ {user_score_score:,} ▸ x{user_score_max_combo}/{max_combo} ▸ {hits_txt}'
+	try_count = 1
+	for i in range(index+1, len(user_recents)):
+		if user_recents[i]['beatmap']['id'] == beatmap_id: try_count += 1
+		else: break
+	
+	replay_txt = ''
+	if user_score['replay']:
+		score_id = user_score['id']
+		replay_txt = f' ▸ `[Replay](https://osu.ppy.sh/scores/taiko/{score_id}/download`)'
+	if user_score['created_at']:
+		ago_value = convert_to_unix_time(user_score['created_at'], '%Y-%m-%dT%H:%M:%SZ')
+		bottom_txt = f'Try #{try_count} ▸ <t:{ago_value}:R> ago{replay_txt}'
+	else:
+		bottom_txt = f'Try #{try_count}{replay_txt}'
+
+	return top_txt, map_txt, pp_txt, score_txt, bottom_txt
+
+def build_recent_embed(ctx, user_recents, mode, index):
+	...
+
+def build_recents_embed(ctx, user_recents, mode, index):
+	...
+	# user_score = user_recents[index]
+	# beatmap_info, pp_text, pp_fc_text, acc_text, mods_text, stats = user_score_embed_txts(user_score, mode)
+	# rank = user_score['rank']
+	# beatmapset_id = beatmap_info['beatmapset_id']
+	# beatmap_id = beatmap_info['id']
+	# info = ''
+	# try_text = ''
+	
+	# info += f'▸ {user_score['score']} ▸ x{user_score['max_combo']}/{beatmap_info['max_combo']} ▸ {hits_txt}'
+	# em = discord.Embed(description=info, colour=ctx.message.author.colour)
+	# em.set_author(
+	# 	name=, 
+	# 	url=f'https://osu.ppy.sh/beatmapsets/{beatmapset_id}#osu/{beatmap_id}',
+	# 	icon_url=user_info['avatar_url'])
+	# em.set_thumbnail(url=f'https://b.ppy.sh/thumb/{beatmapset_id}l.jpg')
+		
+	# time_ago_text = format_time_ago(user_score['created_at'], )
+
+	# em.set_footer(text = f"{try_text}On osu! Bancho Server • {time_ago_text}", icon_url='https://i.imgur.com/Req9wGs.png')
+	# return embed
+
+def build_recents_list_embed(ctx, user_recents, mode, passed):
+	...
+	# beatmap_info, F_rank, progress_text, pp_text, pp_fc_text, acc_text, mods_text = get_recents_embed_info(user_recents[index])
+	# beatmapset_id = beatmap_info['beatmapset_id']
+	# beatmap_id = beatmap_info['id']
+	
+	# info = ""
+	# if F_rank:
+	# 	info += f'▸ {rank_emotes[rank]} ({progress_text:.1f}%) ▸ **{pp_text:.2f}** ({pp_text:.2f}) ▸ {acc_text:.2f}%\n'
+	# else:
+	# 	info += f'▸ {rank_emotes[rank]} ▸ **{pp_text:.2f}** ({pp_text:.2f}) ▸ {acc_text:.2f}%\n'
+
+	# em = discord.Embed(description=info, colour=ctx.message.author.colour)
+	# em.set_author(
+	# 	name=f'**Recent {gamemode_texts[mode]} Plays for {user_info['username']}:**', 
+	# 	url=f'https://osu.ppy.sh/beatmapsets/{beatmapset_id}#{beatmap_info['mode']}/{beatmap_id}',
+	# 	icon_url=user_info['avatar_url'])
+	# em.set_thumbnail(url=f'https://b.ppy.sh/thumb/{beatmapset_id}l.jpg')
+
+	# try_text = ''
+	# if F_rank:
+	# 	try_count = 1
+	# 	for i in range(index+1, len(user_recents)):
+	# 		if user_recents[i]['beatmap']['id'] == beatmap_id: try_count += 1
+	# 		else: break
+		
+	# time_ago_text = format_time_ago(user_score['created_at'], '%Y-%m-%dT%H:%M:%SZ')
+
+	# em.set_footer(text = bottom_txt, icon_url='https://i.imgur.com/Req9wGs.png')
+
+	# embed_data = [
+	# 	{"title": "Page 1", "description": "This is the content of page 1."},
+	# 	{"title": "Page 2", "description": "This is the content of page 2."},
+	# 	{"title": "Page 3", "description": "This is the content of page 3."}
+	# ]
+
+	# pages = []
+	# for data in embed_data:
+	# 	embed = discord.Embed(title=data["title"], description=data["description"])
+	# 	pages.append(embed)
+
+	# return pages
+
 async def send_user_recent_card(ctx, username, passed, mode, list_, best, index, search):
 	# username
 	user_info = osu_api.user_info(username)
@@ -387,9 +401,7 @@ async def send_user_recent_card(ctx, username, passed, mode, list_, best, index,
 	# index
 	user_recents = osu_api.user_recents(username, mode, 100)
 	if user_recents == []: await ctx.send(f'**`{username}` has no recent plays in `Bancho` for `{gamemode_texts[mode]}`.**')
-	msg = f'**Recent {gamemode_texts[mode]} Play for {user_recents[0]['user']['username']}:**'
-	if not index: index = 0
-	if index >= len(user_recents):
+	if index and index >= len(user_recents):
 		# checking now is not a problem since len(user_recents) can only go down (with passed)
 		await ctx.send(f'**`{username}` has not enough recent plays in `Bancho` for `{gamemode_texts[mode]}` (`{len(user_recents)}` recent plays)**')
 		return
@@ -407,21 +419,20 @@ async def send_user_recent_card(ctx, username, passed, mode, list_, best, index,
 	if search:
 		search_lower = search.lower()
 		user_recents = sorted(user_recents, key=lambda x: Levenshtein.distance(search_lower, x["title"].lower()) / max(len(search), len(x["title"])))
-	# list
-	if list_:
-		# start listing at index
-		pages = build_recents_list_embed(ctx, user_recents, mode, index)
+	if index:
+		msg, embed = build_recent_embed(ctx, user_recents, mode, index)
+		await ctx.send(msg, embed=embed)
+	else:
+		# list
+		if list_:
+			# start listing at index
+			pages = build_recents_list_embed(ctx, user_recents, mode, index)	
+		else:
+			# recent play index
+			pages = build_recents_embed(ctx, user_recents, mode, index)
 		paginator = discord.ui.ButtonPaginator(pages)
 		await paginator.start(ctx)
-	else:
-		# recent play index
-		embed = build_recents_embed(ctx, user_recents, mode, index)
-		await ctx.send(msg, embed=embed)
 
 ########################################### recent ###########################################
 
-if __name__ == '__main__':
-	bot = commands.Bot(command_prefix='~', intents=discord.Intents.all())
-	bot.run(str(open('secrets/token', 'r').read()))
-
-	osu_api = OsuAPI()
+osu_api = OsuAPI()

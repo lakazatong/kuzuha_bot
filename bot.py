@@ -1,11 +1,11 @@
 from kuzuha import *
 
-global bot
+bot = commands.Bot(command_prefix='~', intents=discord.Intents.all())
 
 @bot.event
 async def on_ready():
 	await load_users()
-	print(f'Logged in as {bot.user.name} ({bot.user.id})')
+	cprint(f'Logged in as {bot.user.name} ({bot.user.id})', GREEN)
 
 @bot.command(aliases=['r'])
 async def restart(ctx):
@@ -54,9 +54,11 @@ async def recent(ctx):
 		await ctx.send(recent_help_msg)
 		return
 	if len(usernames) == 0:
-		usernames = list(users.get(str(ctx.message.author.id)))
+		usernames = list(get_username(ctx.message.author.id))
 		if not usernames[0]:
 			await ctx.send('First use `~osuset <osu! pseudo>`')
 			return
 	for username in usernames:
 		await send_user_recent_card(ctx, username, *args)
+
+bot.run(str(open('secrets/token', 'r').read()))
