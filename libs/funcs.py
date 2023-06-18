@@ -20,6 +20,11 @@ try:
 except:
 	os.system('pip install pytz')
 	import pytz
+try:
+	import Levenshtein
+except:
+	os.system('pip install levenshtein')
+	import Levenshtein
 
 # def get_importing_file_paths():
 # 	caller_frames = inspect.stack()[1:]  # Exclude the current frame (X)
@@ -128,10 +133,8 @@ def save_json(obj, filename, indent=3):
 	with open(filename, 'w+') as f:
 		f.write(json.dumps(obj, indent=indent))
 
-def convert_to_unix_time(date_string, date_format):
-	# Define the input date format
-	# date_format = "%a, %d-%b-%Y %H:%M:%S %Z" if '-' in date_string else "%a, %d %b %Y %H:%M:%S %Z"
-	parsed_date = datetime.strptime(date_string, date_format)
+def convert_to_unix_time(date_str, format_str):
+	parsed_date = datetime.strptime(date_str, format_str)
 	unix_time = int(time.mktime(parsed_date.timetuple()))
 	return unix_time
 
@@ -155,37 +158,37 @@ def format_time_ago(date_str, format_str):
 		decades = floor(years/10)
 		centuries = floor(decades/10)
 		if centuries > 0:
-			return f"{centuries} centurie{'s' if centuries > 1 else ''} ago"
+			return f"{centuries} centurie{'s' if centuries > 1 else ''}"
 		elif decades > 0:
-			return f"{decades} decade{'s' if decades > 1 else ''} ago"
-		return f"{years} year{'s' if years > 1 else ''} ago"
+			return f"{decades} decade{'s' if decades > 1 else ''}"
+		return f"{years} year{'s' if years > 1 else ''}"
 	elif months > 0:
 		if days >= 15: # rougly half a month
 			months += 1
-			if months == 12: return '1 year ago'
-		return f"{months} month{'s' if months > 1 else ''} ago"
+			if months == 12: return '1 year'
+		return f"{months} month{'s' if months > 1 else ''}"
 	elif weeks > 0:
 		if days >= 4: # round up if friday, saturday or sunday
 			weeks += 1
-			if weeks == 4: return '1 month ago' # roughly a month
-		return f"{weeks} week{'s' if weeks > 1 else ''} ago"
+			if weeks == 4: return '1 month' # roughly a month
+		return f"{weeks} week{'s' if weeks > 1 else ''}"
 	elif days > 0:
 		if hours >= 12:
 			days += 1
-			if days == 7: return '1 week ago'
-		return f"{days} day{'s' if days > 1 else ''} ago"
+			if days == 7: return '1 week'
+		return f"{days} day{'s' if days > 1 else ''}"
 	elif hours > 0:
 		if minutes >= 30:
 			hours += 1
-			if hours == 24: return '1 day ago'
-		return f"{hours} hour{'s' if hours > 1 else ''} ago"
+			if hours == 24: return '1 day'
+		return f"{hours} hour{'s' if hours > 1 else ''}"
 	elif minutes > 0:
 		if seconds >= 30:
 			minutes += 1
-			if minutes == 60: return '1 hour ago'
-		return f"{minutes} minute{'s' if minutes > 1 else ''} ago"
+			if minutes == 60: return '1 hour'
+		return f"{minutes} minute{'s' if minutes > 1 else ''}"
 	else:
-		return f"{seconds} second{'s' if seconds > 1 else ''} ago"
+		return f"{seconds} second{'s' if seconds > 1 else ''}"
 
 def get_next_key(string, keys):
 	start_index = 0
@@ -231,19 +234,15 @@ def get_from_link(original_link, key):
 	if index == -1: return None
 	end = link[index+len(key):].find('&')
 
+def build_get_data(params):
+	data = ''
+	for key, value in params.items(): data += f'&{key}={value}'
+	return data[1:] if data != '' else ''
+
 def build_get_url(base_url, params):
-	url = base_url
-	L = list(params.items())
-	i = 0
-	if i < len(L):
-		url += f'?{L[i][0]}={L[i][1]}'
-		i += 1
-	else:
-		return url
-	while i < len(L):
-		url += f'&{L[i][0]}={L[i][1]}'
-		i += 1
-	return url
+	data = ''
+	for key, value in params.items(): data += f'&{key}={value}'
+	return f'{base_url}?{data[1:]}' if data != '' else ''
 
 def deconstruct_get_url(get_url):
 	i = get_url.find('&')
