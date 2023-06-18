@@ -1,4 +1,4 @@
 secrets
 __pycache__
 *test*
-info_raw*
+users.json
