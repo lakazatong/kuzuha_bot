@@ -1,7 +1,19 @@
-from libs.utils.imports import *
+import os, json
 
 def get_attributes(obj):
 	return [a for a in dir(obj) if not a.startswith('__') and not callable(getattr(obj, a))]
+
+from libs.utils.debug import cprint
+
+def load_json(path, mode='r'):
+	r = None
+	if os.path.exists(path):
+		try:
+			with open(path, mode) as f:
+				r = json.loads(f.read())
+		except:
+			cprint('read_json: failed tp read '+path, 'red')
+	return r
 
 def save_json(obj, filename, indent=3):
 	with open(filename, 'w+') as f:

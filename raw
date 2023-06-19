@@ -1,0 +1,98 @@
+{
+  "content": "Hello World",
+  "tts": false,
+  "embeds": [
+    {
+      "id": 339015766,
+      "title": "title",
+      "description": "This is an embed!",
+      "footer": {
+        "text": "footer"
+      },
+      "author": {
+        "name": "author"
+      },
+      "fields": [
+        {
+          "id": 88184828,
+          "name": "field 1",
+          "value": "valjue 1"
+        },
+        {
+          "id": 57798511,
+          "name": "field 2",
+          "value": "value 2",
+          "inline": true
+        }
+      ]
+    }
+  ],
+  "components": [
+    {
+      "id": 188830760,
+      "type": 1,
+      "components": [
+        {
+          "custom_id": 636278124,
+          "type": 2,
+          "style": 1,
+          "label": "cool button",
+          "action_set_id": "684909849"
+        }
+      ]
+    },
+    {
+      "id": 492998997,
+      "type": 1,
+      "components": [
+        {
+          "custom_id": 981572344,
+          "type": 3,
+          "placeholder": "placeholder",
+          "options": [
+            {
+              "value": "as",
+              "id": 347145624,
+              "label": "option 1",
+              "action_set_id": "148618361"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "actions": {
+    "148618361": {
+      "actions": [
+        {
+          "type": 1,
+          "id": 76961976,
+          "text": "a",
+          "public": true
+        },
+        {
+          "type": 1,
+          "id": 836035265,
+          "text": "b",
+          "public": true
+        }
+      ]
+    },
+    "684909849": {
+      "actions": [
+        {
+          "type": 1,
+          "id": 643225279,
+          "text": "cool button text responmse",
+          "public": false
+        },
+        {
+          "type": 6,
+          "id": 292715532,
+          "text": "cool button dm text response",
+          "public": false
+        }
+      ]
+    }
+  }
+}

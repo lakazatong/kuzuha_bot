@@ -1,4 +1,15 @@
-from libs.utils.imports import *
+import urllib, requests, webbrowser, os
+
+'''
+status codes
+
+	Informational responses (100 – 199)
+	Successful responses (200 – 299)
+	Redirection messages (300 – 399)
+	Client error responses (400 – 499)
+	Server error responses (500 – 599)
+
+'''
 
 def decode_url(url):
 	return urllib.parse.unquote(url)
@@ -8,6 +19,33 @@ def encode_url(url):
 
 def status_code_text(status_code):
 	return requests.status_codes._codes.get(status_code, ["Unknown"])[0]
+
+status_code_category_color = {
+	'Informational': 'orange',
+	'Successful': 'green',
+	'Redirection': 'orange',
+	'Client error': 'red',
+	'Server error': 'red'
+}
+
+def status_code_category(status_code):
+	if status_code >= 400:
+		# error
+		if status_code >= 500:
+			return 'Server error'
+		else:
+			return 'Client error'
+	else:
+		# successful
+		if status_code < 200:
+			if status_code >= 100:
+				return 'Informational'
+			else:
+				return 'Unknown'
+		if status_code < 300:
+			return 'Successful'
+		else:
+			return 'Redirection'
 
 def har_to_json(har_headers):
 	headers = {}
@@ -25,11 +63,21 @@ def build_get_url(base_url, params):
 	for key, value in params.items(): data += f'&{key}={value}'
 	return f'{base_url}?{data[1:]}' if data != '' else ''
 
+from libs.utils.os import from_windows
+
 def get_from_link(original_link, key):
 	link = original_link
 	index = link.find(key)
 	if index == -1: return None
 	end = link[index+len(key):].find('&')
+
+def open_url(url):
+	if from_windows():
+		webbrowser.open(url)
+	else:
+		# escape the '&' characters
+		url = url.replace('&', '^&')
+		os.system(f'cmd.exe /C "start {url}"')
 
 def deconstruct_get_url(get_url):
 	i = get_url.find('&')
@@ -74,6 +122,8 @@ def txt_headers_to_json_headers(txt, filters=[]):
 			headers[left] = e[semi_colon_index+1:].strip()
 	return method, url, http, headers
 
+from libs.utils.debug import cprint
+
 def wget(url:str, output_filename:str=None, output_dir:str=None, show_progress:bool=True, quiet:bool=True, auth:tuple[str, str]=None, headers:dict=None, print_cmd:bool=False):
 	output_opt = f'-O "{output_filename}"' if output_filename != None else ''
 	progress_opt = '--show-progress' if show_progress else ''
@@ -92,7 +142,7 @@ def wget(url:str, output_filename:str=None, output_dir:str=None, show_progress:b
 		if os.path.exists(output_dir):
 			os.system(f'cd "{output_dir}" && {cmd}')
 		else:
-			cprint(f'\ncould not wget "{url}" in "{output_dir}" because it does not exists', RED)
+			cprint(f'\ncould not wget "{url}" in "{output_dir}" because it does not exists', 'red')
 			return False
 	else:
 		os.system(cmd)
@@ -103,9 +153,9 @@ def wget(url:str, output_filename:str=None, output_dir:str=None, show_progress:b
 	if os.path.exists(full_path):
 		with open(full_path, 'rb') as f:
 			if f.read() == b'':
-				cprint(f'\nthis command:\n{cmd}\ndownloaded a file of 0 bytes', RED)
+				cprint(f'\nthis command:\n{cmd}\ndownloaded a file of 0 bytes', 'red')
 				return False
 	else:
-		cprint(f'\nthis command:\n{cmd}\nseemed to have failed', RED)
+		cprint(f'\nthis command:\n{cmd}\nseemed to have failed', 'red')
 		return False
 	return True

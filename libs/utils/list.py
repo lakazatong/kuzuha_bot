@@ -1,5 +1,3 @@
-from libs.utils.imports import *
-
 class list(list):
 	def get(self, element):
 		for i in range(len(self)):

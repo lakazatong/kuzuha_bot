@@ -1,9 +1,20 @@
-from libs.utils.imports import *
+import pytz, time
+from datetime import datetime, timezone
 
 def convert_to_unix_time(date_str, format_str):
 	parsed_date = datetime.strptime(date_str, format_str)
 	unix_time = int(time.mktime(parsed_date.timetuple()))
 	return unix_time
+
+def code_to_txt(code):
+	return code.replace('   ', '\\t').replace('''
+''', '\\n')
+
+def txt_to_code(code):
+	code.replace('\\\\t', '\\t')
+	code.replace('\\\\n', '\\n')
+	return code.replace('\\t', '    ').replace('\\n', '''
+''')
 
 def format_time_ago(date_str, format_str):
 	date = datetime.strptime(date_str, format_str)
@@ -56,13 +67,3 @@ def format_time_ago(date_str, format_str):
 		return f"{minutes} minute{'s' if minutes > 1 else ''}"
 	else:
 		return f"{seconds} second{'s' if seconds > 1 else ''}"
-
-def code_to_txt(code):
-	return code.replace('   ', '\\t').replace('''
-''', '\\n')
-
-def txt_to_code(code):
-	code.replace('\\\\t', '\\t')
-	code.replace('\\\\n', '\\n')
-	return code.replace('\\t', '    ').replace('\\n', '''
-''')

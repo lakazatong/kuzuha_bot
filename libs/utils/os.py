@@ -1,4 +1,4 @@
-from libs.utils.imports import *
+import os, threading, platform
 
 def from_windows():
 	return platform.system() == 'Windows'
@@ -17,3 +17,15 @@ def run(func, delay):
 	timer = threading.Timer(delay, func)
 	timer.start()
 	return timer
+
+from libs.utils.debug import cprint
+
+def read_file(path, mode='r'):
+	r = None
+	if os.path.exists(path):
+		try:
+			with open(path, mode) as f:
+				r = f.read()
+		except:
+			cprint('read_file: failed tp read '+path, 'red')
+	return r

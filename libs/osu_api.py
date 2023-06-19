@@ -1,6 +1,18 @@
-from libs.utils.all import *
-# source : https://github.com/Francesco149/pyttanko/blob/master/pyttanko.py
-from libs.pyttanko import *
+import os, sys, requests, json, time, copy
+from math import *
+
+sys.path.append('libs')
+from utils.debug import *
+from utils.format import *
+from utils.json import *
+from utils.list import *
+from utils.os import *
+from utils.str import *
+from utils.unsorted import *
+from utils.web import *
+
+# source https://github.com/Francesco149/pyttanko/blob/master/pyttanko.py
+from pyttanko import parser, mods_from_str, diff_calc, ppv2
 
 v1, v2 = None, None
 def exit_function():
@@ -45,7 +57,7 @@ def extract_user_data(user):
 	}
 	return info
 
-def score_stats(user_score, beatmap_id, fc=False, max_combo=None):
+def get_score_stats(user_score, beatmap_id, fc=False, max_combo=None):
 	osu_file = v2.osu_file(beatmap_id)
 	with open('test.txt', 'w+') as f:
 		f.write(osu_file)
@@ -82,6 +94,33 @@ def score_stats(user_score, beatmap_id, fc=False, max_combo=None):
 		"max_combo": max_combo,
 		"acc": r[4]
 	}
+	return r
+
+get_score_stats2_headers = {
+	"Accept-Encoding": "gzip, deflate, br",
+	"Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8,fr-FR;q=0.7,fr;q=0.6",
+	"Connection": "keep-alive",
+	# "Content-Length": "94",
+	"Host": "pp-api.huismetbenen.nl",
+	"Origin": "https://pp.huismetbenen.nl",
+	"Referer": "https://pp.huismetbenen.nl/",
+	"Sec-Fetch-Dest": "empty",
+	"Sec-Fetch-Mode": "cors",
+	"Sec-Fetch-Site": "same-site",
+	"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
+	"accept": "application/json",
+	"authorization": "",
+	"content-type": "application/json",
+	"sec-ch-ua": "\"Not.A/Brand\";v=\"8\", \"Chromium\";v=\"114\", \"Google Chrome\";v=\"114\"",
+	"sec-ch-ua-mobile": "?0",
+	"sec-ch-ua-platform": "\"Windows\"",
+	"x-rework":""
+}
+
+def get_score_stats2(beatmap_id, mods, n300, n100, n50, nmiss, combo):
+	data = f'{{"map_id":{beatmap_id},"mods":{json.dumps(mods)},"good":{n300},"ok":{n100},"meh":{n50},"miss":{nmiss},"combo":{combo},"rework":"live"}}'
+	get_score_stats2_headers['Content-Length'] = str(len(data))
+	r = requests.request('PATCH', 'https://pp-api.huismetbenen.nl/calculate-score', headers=get_score_stats2_headers, data=data)
 	return r
 
 def score_pp(user_score, beatmap_id, fc=False):
@@ -143,15 +182,21 @@ class OsuAPI_v2:
 	urlencoded_headers = { 
 		"Accept": "application/json",
 		"Content-Type": "application/x-www-form-urlencoded",
-	}
+	}	
 
 	def update_tokens(self, r):
-		self.refresh_token = r['refresh_token']
-		with open('secrets/osu_api_v2_refresh_token', 'w+') as f:
-			f.write(self.refresh_token)
-		self.json_headers['Authorization'] = r['token_type'] + ' ' + r['access_token']
-		self.urlencoded_headers['Authorization'] = r['token_type'] + ' ' + r['access_token']
-		self.refresh_token_thread = run(self.refresh_tokens, delay=int(r['expires_in']))
+		self.tokens = {}
+		self.tokens['access_token'] = {}
+		self.tokens['access_token']['value'] = r['access_token']
+		self.tokens['access_token']['token_type'] = r['token_type']
+		self.tokens['access_token']['expires'] = int(r['expires_in'])
+		self.tokens['access_token']['created_at'] = floor(time.time())
+		self.tokens['refresh_token'] = r['refresh_token']
+		save_json(self.tokens, 'secrets/osu_api_v2_tokens')
+		authorization = r['token_type'] + ' ' + r['access_token']
+		self.json_headers['Authorization'] = authorization
+		self.urlencoded_headers['Authorization'] = authorization
+		self.refresh_token_thread = run(self.refresh_tokens, delay=max(10, int(r['expires_in'])-10))
 
 	def first_manual_startup(self):
 		params = {
@@ -162,16 +207,11 @@ class OsuAPI_v2:
 			"state": "randomval"
 		}
 		url = build_get_url('https://osu.ppy.sh/oauth/authorize', params) 
-		if from_windows():
-			import webbrowser
-			webbrowser.open(url)
-		else:
-			# escape the '&' characters
-			url = url.replace('&', '^&')
-			os.system(f'cmd.exe /C "start {url}"')
+		open_url(url)
 		code = input('OsuAPI_v2: Enter the received code contained in the url after Authorizing:\n')
 		params = {
 			"client_id": self.client_id,
+			"client_secret": self.client_secret,
 			"code": code,
 			"grant_type": "authorization_code",
 			"redirect_uri": self.redirect_uri
@@ -191,7 +231,7 @@ class OsuAPI_v2:
 			"client_id": self.client_id,
 			"client_secret": self.client_secret,
 			"grant_type": "refresh_token",
-			"refresh_token": self.refresh_token,
+			"refresh_token": self.tokens['refresh_token'],
 			"scope": "public+identify"
 		}
 		data = build_post_data(params)
@@ -200,14 +240,14 @@ class OsuAPI_v2:
 		error_msg = None
 		if r.status_code != 200:
 			if 'error_description' in content:
-				if 'the refresh token is invalid' in content['error_description'].lower():
-					with open('secrets/osu_api_v2_client_secret', 'w+') as f:
-						f.write(input('OsuAPI_v2: The refresh token probably expired, reset your client secret and enter the new one:\n'))
-					self.first_manual_startup()
-				elif 'client authentication failed' in content['error_description'].lower():
-					error_msg = 'OsuAPI_v2: Probably too many authentication requests were sent, retry again later'
-				else:
-					error_msg = 'OsuAPI_v2: Unknown error description'
+				# if 'the refresh token is invalid' in content['error_description'].lower():
+					# with open('secrets/osu_api_v2_client_secret', 'w+') as f:
+						# f.write(input('OsuAPI_v2: The refresh token probably expired, reset your client secret and enter the new one:\n'))
+				# elif 'client authentication failed' in content['error_description'].lower():
+				# 	error_msg = 'OsuAPI_v2: Probably too many authentication requests were sent, retry again later'
+				# else:
+					# error_msg = 'OsuAPI_v2: Unknown error description'
+				self.first_manual_startup() # ???
 			else:
 				error_msg = 'OsuAPI_v2: Unknown error'
 		if error_msg:
@@ -222,15 +262,25 @@ class OsuAPI_v2:
 	def __init__(self):
 		# init constants
 		self.client_id = '22868'
-		with open('secrets/osu_api_v2_client_secret', 'r') as f:
-			self.client_secret = f.read()
+		self.client_secret = read_file('secrets/osu_api_v2_client_secret')
+		if not self.client_secret:
+			cprint('OsuAPI_v2: failed to get client_secret from secrets/osu_api_v2_client_secret', RED)
+			exit()
 		self.redirect_uri = r'http%3A%2F%2Fdiscord%2Ecom'
 
-		# get token
-		if os.path.exists('secrets/osu_api_v2_refresh_token'):
-			with open('secrets/osu_api_v2_refresh_token', 'r') as f:
-				self.refresh_token = f.read()
-			self.refresh_tokens()
+		self.tokens = load_json('secrets/osu_api_v2_tokens')
+		if self.tokens:
+			time_alive = floor(time.time()) - self.tokens['access_token']['created_at']
+			time_left = self.tokens['access_token']['expires'] - time_alive
+			if time_left < 3600:
+				# less than one hour to live, refresh
+				self.refresh_tokens()
+			else:
+				# refresh later 10s before expiration
+				self.refresh_token_thread = run(self.refresh_tokens, delay=max(10, time_left-10))
+				authorization = self.tokens['access_token']['token_type'] + ' ' + self.tokens['access_token']['value']
+				self.json_headers['Authorization'] = authorization
+				self.urlencoded_headers['Authorization'] = authorization
 		else:
 			self.first_manual_startup()
 
@@ -277,10 +327,13 @@ class OsuAPI_v2:
 		else:
 			cprint('OsuAPI_v2: reached impossible statement?', RED)
 
+
 # --------------------------------------------------------------------------- #
 
 # call v1 or v2 as needed
 class OsuAPI:
+
+	logo_url = 'https://i.imgur.com/Req9wGs.png'
 
 	user_scores_sort_by_aliases = {
 		"accuracy": ['accuracy', 'acc'],
@@ -331,7 +384,9 @@ class OsuAPI:
 		return r if r == [] else r[0]
 
 	def beatmap_info(self, beatmap_id):
-		return v2.beatmap_info(beatmap_id)
+		r = v2.beatmap_info(beatmap_id)
+		if self.save: save_json(r, self.save_dir+'beatmap_info.json')
+		return r
 
 	def osu_file(beatmap_id):
 		return v2.osu_file(beatmap_id)
