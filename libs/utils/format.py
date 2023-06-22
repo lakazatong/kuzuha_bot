@@ -174,24 +174,24 @@ def parse(input_string, options):
 			longs = tmp[1:]
 			takes_arg = tmp[0]
 			if len(e) >= 3 and e[0] == '-' and e[1] == '-' and e[2:] in longs:
-				is_arg = False
 				if takes_arg:
 					if i+1 < len(l):
 						parsed_options[k] = l[i+1]
 					i += 1
 				else:
 					parsed_options[k] = True
+				is_arg = False
 				break
 			elif len(e) >= 2 and e[0] == '-' and e[1] == short:
 				
 				if len(e) == 2:
 					if takes_arg:
 						if i+1 < len(l):
-							is_arg = False
 							parsed_options[k] = l[i+1]
 						i += 1
 					else:
 						parsed_options[k] = True
+					is_arg = False
 				else:
 					if not takes_arg:
 						multiple_short_options = True

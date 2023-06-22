@@ -16,6 +16,7 @@ async def quit(ctx):
 	global osu_api
 	osu_api.close()
 	await save_users()
+	await ctx.message.add_reaction('👋')
 	await bot.close()
 
 ######### system #########
@@ -30,7 +31,6 @@ async def restart(ctx):
 @bot.command()
 async def send_users(ctx):
 	r = await ctx.send(json.dumps(get_users(), indent=3))
-	print(type(r))
 
 ######### osu #########
 
@@ -105,43 +105,74 @@ ansi_options = {
 	"b": [False, 'black_bg', 'black']
 }
 
-ansi_msg = json.loads(load_raw('messages/ansi'))
-
-@bot.event
-async def on_button_click(interaction):
-	print('clicked_done')
-	print(interaction.message.interaction == interaction)
-	# await interaction.message.clear_reactions()
-	# interaction.message.clicked_done = True
+# ansi_msg = json.loads(load_raw('messages/ansi'))
 
 @bot.command()
 async def ansi(ctx):
 	# ctx.message.clicked_done = False
-
-	arguments, options = parse(ctx.message.content, ansi_options)
+	to_parse = ' '.join(ctx.message.content.split(' ')[1:])
+	arguments, options = parse(to_parse, ansi_options)
 	if options[0]:
 		await ctx.send('ansi help msg')
 		return
 
-	out = capture_console_output(ansi_text, ' '.join(ctx.message.content.split(' ')[1:]), *options[1:])
-	ansi_msg['content'] = '```ansi\n'+out+'```'
-	msg = create_message(ansi_msg, ctx.channel.id, channel=ctx.channel)
+	# msg = create_message(ansi_msg, ctx.channel.id, channel=ctx.channel)
+	
+	done = False
+	time_up = False
+
+	view = discord.ui.View(timeout=300)
+	
+	async def ansi_interaction_check(interaction):
+		return interaction.user.id == ctx.author.id
+	view.interaction_check = ansi_interaction_check
+	
+	async def ansi_view_timetout():
+		nonlocal done, time_up
+		done = True
+		time_up = True
+	view.on_timeout = ansi_view_timetout
+
+	done_button = discord.ui.Button(
+		style=discord.ButtonStyle.success,
+		custom_id='done_button',
+		disabled=False,
+		label='Done'
+	)
+	async def ansi_done_button_clicked(interaction):
+		nonlocal done
+		done = True
+	done_button.callback = ansi_done_button_clicked
+	view.add_item(done_button)
+
+	out = capture_console_output(ansi_text, ' '.join(arguments), *options[1:])
+	msg = await ctx.channel.send('```ansi\n'+out+'```', view=view)
 	wait = 0
 	last_edit_time = ctx.message.created_at
-	while True:
+	while not done:
 		await asyncio.sleep(1)
 		print(f'ansi: waiting {ctx.message.author.name}... '+str(wait))
 		wait += 1
 		if wait == 30: break
 		# if ctx.message.clicked_done: break
 		async for entry in ctx.channel.history(limit=1, before=msg):
-			if not entry.edited_at or entry.edited_at == last_edit_time or (entry.edited_at - last_edit_time).total_seconds() >= 60:
+			if not entry.edited_at or entry.edited_at == last_edit_time or (entry.edited_at - last_edit_time).total_seconds() >= 30:
 				continue
-			out = capture_console_output(ansi_text, ' '.join(entry.content.split(' ')[1:]), *options[1:])
-			ansi_msg['content'] = '```ansi\n'+out+'```'
+			to_parse = ' '.join(entry.content.split(' ')[1:])
+			arguments, options = parse(to_parse, ansi_options)
+			if options[0]:
+				view.clear_items()
+				await msg.edit(content='ansi help msg', view=view)
+				return
+			out = capture_console_output(ansi_text, ' '.join(arguments), *options[1:])
 			await msg.edit(content='```ansi\n'+out+'```')
 			wait = 0
 			last_edit_time = entry.edited_at
 			break
+	
+	view.clear_items()
+	last_content = '```ansi\n'+out+'```'
+	if time_up: last_content = 'time\'s up\n' + last_content
+	await msg.edit(content=last_content, view=view)
 
 bot.run(discord_bot_token)
