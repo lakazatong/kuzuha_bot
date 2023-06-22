@@ -1,5 +1,11 @@
-import urllib, requests, webbrowser, os
-
+import os, urllib, webbrowser
+try:
+	import requests
+except:
+	os.system('pip install requests')
+	import requests
+from libs.utils.os import from_windows
+from libs.utils.debug import cprint
 '''
 status codes
 
@@ -63,8 +69,6 @@ def build_get_url(base_url, params):
 	for key, value in params.items(): data += f'&{key}={value}'
 	return f'{base_url}?{data[1:]}' if data != '' else ''
 
-from libs.utils.os import from_windows
-
 def get_from_link(original_link, key):
 	link = original_link
 	index = link.find(key)
@@ -121,8 +125,6 @@ def txt_headers_to_json_headers(txt, filters=[]):
 			left = e[:semi_colon_index].strip()
 			headers[left] = e[semi_colon_index+1:].strip()
 	return method, url, http, headers
-
-from libs.utils.debug import cprint
 
 def wget(url:str, output_filename:str=None, output_dir:str=None, show_progress:bool=True, quiet:bool=True, auth:tuple[str, str]=None, headers:dict=None, print_cmd:bool=False):
 	output_opt = f'-O "{output_filename}"' if output_filename != None else ''

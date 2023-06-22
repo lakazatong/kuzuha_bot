@@ -1,9 +1,8 @@
 import os, json
+from libs.utils.debug import cprint
 
 def get_attributes(obj):
 	return [a for a in dir(obj) if not a.startswith('__') and not callable(getattr(obj, a))]
-
-from libs.utils.debug import cprint
 
 def load_json(path, mode='r'):
 	r = None
@@ -21,8 +20,7 @@ def save_json(obj, filename, indent=3):
 
 def match_aliases(x, aliases):
 	for key, values in aliases.items():
-		if x in values:
-			return key
+		if x == key or x in values: return key
 	return None
 
 def get_next_key(string, keys):

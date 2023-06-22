@@ -1,0 +1,13 @@
+{
+  "channel_id": `${context.params.event.channel_id}`,
+  "content": "",
+  "tts": false,
+  "embeds": [
+    {
+      "type": "rich",
+      "title": "",
+      "description": `## Usage\n~recent|rs <username>\n## Description\nFetches <username> recent scores. <username> argument is optional.\n## Options\n### Filters\n> * -m|mode <mode>\n>   * Filters out any other mode.\n>   * <mode> options:\n>     * osu     (std, standard, 0)\n>     * taiko     (drum, drums, 1)\n>     * fruits     (ctb, catch, 2)\n>     * mania     (piano, tiles, 3)\n> * -p|pass|passed|clear|cleared\n>  * Filters out all failed scores.\n> * +<mods>\n>  * Filters out any score that lack at least one of the mods.\n>  * <mods> options:\n>    * NF, SD, PF, EZ, HR, HD, DT, NC, HT, FL, SO, FI, MR\n### Sorts\n> * -s|sort <sort>\n>   * Sorts recent scores by <sort>.\n>   * <sort> options:\n>     * pp\n>     * score\n>     * rank\n>     * accuracy (acc)\n>     * max_combo (combo)\n> * -?|search|find    <map name>\n>   * Sorts recent scores by similarity between <map name> and recent scores titles. Overwrites any other sorting.\n### Formating\n> * -l|list\n>   * Lists results.\n> * -i|index <index>\n>   * Gets score <index> from filtered and sorted results or start listing at <index>. (1-100)`,
+      "color": 0x00FFFF
+    }
+  ]
+}

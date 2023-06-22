@@ -1,14 +1,8 @@
-import os, threading, platform
+import os, threading, platform, io, sys
+from libs.utils.debug import cprint
 
 def from_windows():
 	return platform.system() == 'Windows'
-
-_exit = exit
-def exit_with_function(code, exit_function=None):
-	if exit_function:
-		try: exit_function()
-		except: pass
-	_exit(code)
 
 def split_path(path):
 	return os.path.split(path)
@@ -17,8 +11,6 @@ def run(func, delay):
 	timer = threading.Timer(delay, func)
 	timer.start()
 	return timer
-
-from libs.utils.debug import cprint
 
 def read_file(path, mode='r'):
 	r = None
@@ -29,3 +21,20 @@ def read_file(path, mode='r'):
 		except:
 			cprint('read_file: failed tp read '+path, 'red')
 	return r
+
+# source: ChatGPT
+# returns what func printed to the console if it did, otherwise its return value
+def capture_console_output(func, *args):
+	output_buffer = io.StringIO()
+	original_stdout = sys.stdout
+	try:
+		sys.stdout = output_buffer
+		return_value = func(*args)
+	finally:
+		sys.stdout = original_stdout
+	captured_output = output_buffer.getvalue()
+	output_buffer.close()
+	if captured_output:
+		return captured_output
+	else:
+		return return_value

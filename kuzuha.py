@@ -8,9 +8,14 @@ https://discord.com/api/oauth2/authorize?
 	scope=applications.commands%20bot%20guilds%20guilds.members.read%20identify%20messages.read
 '''
 
-import discord
-from discord.ext import commands
 from libs.osu_api import *
+from libs.perf import *
+try:
+	import discord
+except:
+	os.system('pip install discord')
+	import discord
+from discord.ext import commands
 try:
 	import Levenshtein
 except:
@@ -18,7 +23,10 @@ except:
 	import Levenshtein
 
 ########################################### data ###########################################
-discord_bot_token = open('secrets/discord_bot_token', 'r').read()
+
+discord_bot_token = ''
+with open('secrets/discord_bot_token', 'r') as f:
+	discord_bot_token = f.read()
 discord_headers = {
 	"Authorization": "Bot "+discord_bot_token
 	# "User-Agent": "DiscordBot (https://discord.com/api, 10)"
@@ -53,12 +61,59 @@ rank_emotes = {
 	"F": "<:EmoteName:1119272252337295420>"
 }
 
+scores_filters = {
+	"passed": ['pass', 'cleared', 'clear'],
+	"replay": [],
+	"pin": ['pinned']
+}
+
+scores_sorts = {
+	"accuracy": ['acc'],
+	"max_combo": ['combo'],
+	"pp": [],
+	"rank": ['note'],
+	"score": ['points']
+}
+
 ########################################### data ###########################################
 
 
 ########################################### functions ###########################################
 
 import discord
+
+def load_raw(path):
+	raw = ''
+	with open(path, 'r') as f:
+		raw = str(f.read())
+	tmp = raw.finds('`')
+	for i in tmp:
+		if raw[i-1] != '\\':
+			raw = raw[:i]+'"'+raw[i+1:]
+	raw = raw.replace('\\`', '`')
+	lines = raw.split('\n')
+	lines.pop(1)
+	r = str('\n'.join(lines))
+	for i in r.finds('"color"'):
+		j = r[i+8:].find(',')
+		if j == -1: j = min(r[i+8:].find('\n'), r[i+8:].find('}'))
+		j += i+8
+		if j != -1:
+			color = r[i+8:j].strip()
+			r = r[:i+8]+f' {int(color[2:], 16)}'+r[j:]
+		else:
+			cprint('wtf', RED)
+	try:
+		json.loads(r)
+	except json.decoder.JSONDecodeError as e:
+		print(e)
+		e = str(e.__repr__())
+		i = e.finds('(')[1]
+		i = int(e[i+6:-3])
+		print(r[i-i%50:i+50-i%50])
+		print(r[i-1:i+1])
+		exit()
+	return r
 
 def dict_to_embed(embed_dict):
 	embed = discord.Embed(
@@ -98,47 +153,135 @@ def dict_to_embed(embed_dict):
 
 	return embed
 
-def load_raw_message(path):
-	raw = ''
-	with open(path, 'r') as f:
-		raw = f.read()
-	raw = raw.replace('`', '"')
-	raw = raw.replace('<', '&lt;')
-	raw = raw.replace('>', '&gt;')
-	# raw = raw.replace('true', 'True')
-	# raw = raw.replace('false', 'False')
-	# raw = raw.replace('null', 'None')
-	lines = raw.split('\n')
-	lines.pop(1)
-	r = str(''.join(lines))
-	for i in r.finds('"color"'):
-		j = r[i+8:].find(',')+i+8
-		if j == -1: j = r[i+8:].find('}')
-		if j != -1:
-			color = r[i+8:j].strip()
-			r = r[:i+8]+f' {int(color[2:], 16)}'+r[j:]
-		else:
-			cprint('wtf', RED)
+def create_message(message, channel_id, channel=None):
+	if type(message) is dict:
+		try:
+			message = json.dumps(message)
+		except Exception as e:
+			cprint(f'create_message: failed to json.dumps(message) ({e})', 'red')
+			return
+	discord_headers['Content-Type'] = 'application/json'
 	try:
-		json.loads(r)
-	except json.decoder.JSONDecodeError as e:
-		print(e)
-		e = str(e.__repr__())
-		i = e.finds('(')[1]
-		i = int(e[i+6:-3])
-		print(r[i-i%50:i+50-i%50])
-		print(r[i-1:i+1])
-		exit()
+		r = requests.request('POST', f'https://discord.com/api/v10/channels/{channel_id}/messages', data=message, headers=discord_headers)
+	except Exception as e:
+		cprint(f'create_message: failed to make POST request ({e})', 'red')
+		return None
+	data = None
+	try:
+		data = json.loads(r.content)
+	except Exception as e:
+		cprint(f'create_message: failed to json.loads(r.content)[\'id\'] ({e})', 'red')
+		print_response(r)
+		return None
+	try:
+		r = discord.Message(state=bot._connection, channel=channel if channel else bot.get_channel(channel_id), data=data)
+	except Exception as e:
+		cprint(f'create_message: failed to create discord.Message from response ({e})', 'red')
+		print_response(r)
+		return None
 	return r
 
-def create_message(message, channel_id):
-	...
-	# headers = copy.copy(discord_headers)
-	# headers['Content-Type'] = 'application/json'
-	# print_json(message)
-	# print_json(headers)
-	# r = requests.request('POST', f'https://discord.com/api/v10/channels/{channel_id}/messages', data=message, headers=headers)
-	# print_response(r)
+def sort_scores(scores, key):
+	key = match_aliases(scores_sorts, key)
+	r = sorted(scores, key=lambda x: x[key])
+	if key == 'rank':
+		while not r[0]['rank'] in ['SSH', 'SS', 'SH', 'S']: r.append(r.pop(0))
+	else:
+		r.reverse()
+	return r
+
+def filter_scores(scores, key):
+	key = match_aliases(scores_filters, key)
+	if key == 'passed' or key == 'replay':
+		i = 0
+		while i < len(scores):
+			if scores[i][key]: i += 1
+			else: scores.pop(i)
+	elif key == 'pin':
+		i = 0
+		while i < len(scores):
+			if scores[i]['current_user_attributes'][key]['is_pinned']: i += 1
+			else: scores.pop(i)
+	else:
+		cprint(f'filter_scores: Unknown key ({key}')
+	return r
+
+def argument_is_mods(arg):
+	mods = []
+	if len(arg) < 3 or len(arg)%2 == 0: return False, None
+	if arg[0] != '+': return False, None
+	if arg[1] == 'N' and arg[2] == 'M': return True, ['NM']
+	for i in range(1, len(arg), 2):
+		cut = arg[i]+arg[i+1]
+		for mod in ['NF', 'SD', 'PF', 'EZ', 'HR', 'HD', 'DT', 'NC', 'HT', 'FL', 'SO', 'FI', 'MR']:
+			if cut == mod:
+				mods.append(mod)
+				break
+	return True, mods
+
+# allows to send menu like embeds (should be builtin tbh)
+# source : https://github.com/AznStevy/owo-bot/blob/f7651f3cb7d67ba4d93e8ffa96d7a1d3120b2bd8/main.py#L306
+async def score_menu(self, ctx, embed_list, files=[], message:discord.Message=None, page=0, timeout: int=30):
+	def react_check(r, u):
+		return u == ctx.author and r.message.id == message.id and str(r.emoji) in expected
+
+	expected = ["➡", "⬅"]
+	numbs = {
+		"end": ":track_next:",
+		"next": "➡",
+		"back": "⬅",
+		"first": ":track_previous:",
+		"exit": "❌"
+	}
+
+	embed = embed_list[page]
+
+	if not message:
+		message = await ctx.send(embed=embed, files=files)
+		if len(embed_list) > 1:
+			await message.add_reaction("⬅")
+			await message.add_reaction("➡")
+	else:
+		await message.edit(embed=embed, files=files)
+
+	try:
+		react = await self.wait_for('reaction_add', check=react_check, timeout=timeout)
+	except asyncio.TimeoutError:
+		try:
+			await message.clear_reactions()
+		except discord.Forbidden:  # cannot remove all reactions
+			for emote in expected:
+				await message.remove_reaction(emote, self.user)
+		return None
+
+	if react is None:
+		try:
+			try:
+				await message.clear_reactions()
+			except:
+				await message.remove_reaction("⬅", self.user)
+				await message.remove_reaction("➡", self.user)
+		except:
+			pass
+		return None
+	reacts = {v: k for k, v in numbs.items()}
+	react = reacts[react[0].emoji]
+	if react == "next":
+		page += 1
+		next_page = page % len(embed_list)
+		try:
+			await message.remove_reaction("➡", ctx.message.author)
+		except:
+			pass
+		return await self.menu(ctx, embed_list, message=message, page=next_page, timeout=timeout)
+	elif react == "back":
+		page -= 1
+		next_page = page % len(embed_list)
+		try:
+			await message.remove_reaction("⬅", ctx.message.author)
+		except:
+			pass
+		return await self.menu(ctx, embed_list, message=message, page=next_page, timeout=timeout)
 
 ########################################### functions ###########################################
 
@@ -265,115 +408,49 @@ async def card_cmd(ctx, username, mode):
 ########################################### profile ###########################################
 
 ########################################### recent ###########################################
-
 recent_help_msg = '''\
 Usage:
 	~recent|rs <username>
 Description:
-	Fetches <username> recent scores, filters, sorts and formats them.
-Arguments:
-	-p|pass|passed|clear|cleared    Filters out all failed scores.
+	Fetches <username> recent scores.
+	<username> argument is optional.
+Options:
+	Filters:
+		-m|mode			<mode>			Filters out any other mode.
+										<mode> options:
+											osu 	(std, standard, 0)
+											taiko 	(drum, drums, 1)
+											fruits 	(ctb, catch, 2)
+											mania 	(piano, tiles, 3)
+		
+		+<mods>							Filters out any score that
+										lack at least one of the mods.
+										<mods> options:
+											NF, SD, PF, EZ, HR, HD, DT,
+											NC, HT, FL, SO, FI, MR
 
-	-m|mode			<mode>			Filters out any other mode.
-									<mode> aliases for:
-										osu: std, standard, 0
-										taiko: drum, drums, 1
-										fruits: ctb, catch, 2
-										mania: piano, tiles, 3
-	
-	-l|list							List results.
-	
-	-b|best							Sort recent scores with pp.
-	
-	-i|index		<index>			Get score <index> from
-									filtered and sorted results
-									or start listing at <index>. (1-100)
-	
-	-?|search|find	<map name>		Sort recent scores with
-									similarity between <map name>
-									and recent score's title.
-									Overwrites -best sorting.\
+		-p|pass|passed|clear|cleared    Filters out all failed scores.
+	Sorts:
+		-s|sort			<sort>			Sorts recent scores by <sort>.
+										<sort> options:
+											pp
+											score
+											rank
+											accuracy (acc)
+											max_combo (combo)
+
+		-?|search|find	<map name>		Sorts recent scores by
+										similarity between <map name>
+										and recent scores titles.
+										Overwrites any other sorting.
+	Formating:
+		-l|list							Lists results.
+
+		-i|index		<index>			Gets score <index> from
+										filtered and sorted results
+										or start listing at <index>. (1-100)\
 '''
 # recent_help_embed = discord.Embed(description=recent_help_msg, colour = 1752220)
-
-async def parse_recent_arguments(ctx):
-	msg = ctx.message.content
-	msg = msg.strip()
-	while '  ' in msg:
-		msg = msg.replace('  ', ' ')
-	args = list(ctx.message.content.split(' '))
-	err = False, [], None
-	
-	# start at 1 to ignore '~rs' or '~recent'
-	indexes = list(range(1, len(args)))
-
-	# list_
-	list_ = False
-	list_index = args.get('-l')
-	if list_index == -1: list_index = args.get('-list')
-	if list_index != -1:
-		list_ = True
-		indexes.delete(list_index)
-
-	# best
-	best = False
-	best_index = args.get('-b')
-	if best_index == -1: best_index = args.get('-best')
-	if best_index != -1:
-		best = True
-		indexes.delete(best_index)
-
-	# passed
-	passed = False
-	passed_index = args.get('-p')
-	if passed_index == -1: passed_index = args.get('-pass')
-	if passed_index == -1: passed_index = args.get('-passed')
-	if passed_index == -1: passed_index = args.get('-clear')
-	if passed_index == -1: passed_index = args.get('-cleared')
-	if passed_index != -1:
-		passed = True
-		indexes.delete(passed_index)
-
-	# search
-	search = None
-	search_index = args.get('-?')
-	if search_index == -1: search_index = args.get('-search')
-	if search_index == -1: search_index = args.get('-find')
-	if search_index != -1:
-		if search_index+1 >= len(args): return err
-		search = args[search_index+1]
-		indexes.delete(search_index)
-		indexes.delete(search_index+1)	
-
-	# index
-	index = None
-	index_index = args.get('-i')
-	if index_index == -1: index_index = args.get('-index')
-	if index_index != -1:
-		if index_index+1 >= len(args): return err
-		index = args[index_index+1]
-		try: index = int(index)
-		except: return err
-		if index < 1 or index > 100: return err
-		index -= index # 1-100 -> 0-99
-		indexes.delete(index_index)
-		indexes.delete(index_index+1)
-
-	# mode
-	mode = None
-	mode_index = args.get('-m')
-	if mode_index == -1: mode_index = args.get('mode')
-	if mode_index != -1:
-		if mode_index+1 >= len(args): return err
-		mode = match_aliases(args[mode_index+1], modes_aliases)
-		if not mode: return err
-		indexes.delete(mode_index)
-		indexes.delete(mode_index+1)
-
-	# everything left is considered as username
-	usernames = [args[index] for index in indexes]
-
-	return True, usernames, (passed, mode, list_, best, index, search)
 
 def user_recent_embed_txts(user_recent, mode):
 	beatmap_info = osu_api.beatmap_info(user_recent['beatmap']['id'])
@@ -490,7 +567,7 @@ async def send_user_recent_card(ctx, username, passed, mode, list_, best, index,
 		return
 	# mode
 	if not mode: mode = user_info['playmode']
-	# index
+	# best
 	user_recents = osu_api.user_recents(username, mode, 100)
 	if user_recents == []:
 		await ctx.send(f'**`{username}` has no recent plays in `Bancho` for `{gamemode_texts[mode]}`.**')
@@ -499,12 +576,7 @@ async def send_user_recent_card(ctx, username, passed, mode, list_, best, index,
 		# checking now is not a problem since len(user_recents) can only go down (with passed)
 		await ctx.send(f'**`{username}` has not enough recent plays in `Bancho` for `{gamemode_texts[mode]}` (`{len(user_recents)}` recent plays)**')
 		return
-	# passed
-	if passed:
-		i = 0
-		while i < len(user_recents):
-			if user_recents[i]['passed']: i += 1
-			else: user_recents.pop(i)
+	
 	# best
 	if best:
 		user_recents = sorted(user_recents, key=lambda x: x['pp'])
@@ -526,77 +598,7 @@ async def send_user_recent_card(ctx, username, passed, mode, list_, best, index,
 
 ########################################### recent ###########################################
 
-
-########################################### bot ###########################################
-
 bot = commands.Bot(command_prefix='~', intents=discord.Intents.all())
-
-# allows to send menu like embeds (should be builtin tbh)
-# source : https://github.com/AznStevy/owo-bot/blob/f7651f3cb7d67ba4d93e8ffa96d7a1d3120b2bd8/main.py#L306
-async def menu(self, ctx, embed_list, files=[], message:discord.Message=None, page=0, timeout: int=30):
-	def react_check(r, u):
-		return u == ctx.author and r.message.id == message.id and str(r.emoji) in expected
-
-	expected = ["➡", "⬅"]
-	numbs = {
-		"end": ":track_next:",
-		"next": "➡",
-		"back": "⬅",
-		"first": ":track_previous:",
-		"exit": "❌"
-	}
-
-	embed = embed_list[page]
-
-	if not message:
-		message = await ctx.send(embed=embed, files=files)
-		if len(embed_list) > 1:
-			await message.add_reaction("⬅")
-			await message.add_reaction("➡")
-	else:
-		await message.edit(embed=embed, files=files)
-
-	try:
-		react = await self.wait_for('reaction_add', check=react_check, timeout=timeout)
-	except asyncio.TimeoutError:
-		try:
-			await message.clear_reactions()
-		except discord.Forbidden:  # cannot remove all reactions
-			for emote in expected:
-				await message.remove_reaction(emote, self.user)
-		return None
-
-	if react is None:
-		try:
-			try:
-				await message.clear_reactions()
-			except:
-				await message.remove_reaction("⬅", self.user)
-				await message.remove_reaction("➡", self.user)
-		except:
-			pass
-		return None
-	reacts = {v: k for k, v in numbs.items()}
-	react = reacts[react[0].emoji]
-	if react == "next":
-		page += 1
-		next_page = page % len(embed_list)
-		try:
-			await message.remove_reaction("➡", ctx.message.author)
-		except:
-			pass
-		return await self.menu(ctx, embed_list, message=message, page=next_page, timeout=timeout)
-	elif react == "back":
-		page -= 1
-		next_page = page % len(embed_list)
-		try:
-			await message.remove_reaction("⬅", ctx.message.author)
-		except:
-			pass
-		return await self.menu(ctx, embed_list, message=message, page=next_page, timeout=timeout)
-
-bot.menu = menu
-
-########################################### bot ###########################################
+bot.score_menu = score_menu
 
 osu_api = OsuAPI()

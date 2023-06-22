@@ -1,25 +1,26 @@
-import os, sys, requests, json, time, copy
+import sys, copy, asyncio
 from math import *
-
-sys.path.append('libs')
-from utils.debug import *
-from utils.format import *
-from utils.json import *
-from utils.list import *
-from utils.os import *
-from utils.str import *
-from utils.unsorted import *
-from utils.web import *
+from libs.utils.debug import *
+from libs.utils.format import *
+from libs.utils.json import *
+from libs.utils.list import *
+from libs.utils.os import *
+from libs.utils.str import *
+from libs.utils.unsorted import *
+from libs.utils.web import *
 
 # source https://github.com/Francesco149/pyttanko/blob/master/pyttanko.py
-from pyttanko import parser, mods_from_str, diff_calc, ppv2
+# from pyttanko import parser, mods_from_str, diff_calc, ppv2
 
 v1, v2 = None, None
-def exit_function():
-	v1.close()
-	v2.close()
-def exit(code=0):	
-	exit_with_function(code, exit_function)
+_exit = exit
+def exit(code=0):
+	try:
+		# v1.close()
+		v2.close()
+	except:
+		pass
+	_exit(code)
 
 def extract_user_data(user):
 	ssh_count = user['statistics']['grade_counts']['ssh']
@@ -126,13 +127,7 @@ def get_score_stats2(beatmap_id, mods, n300, n100, n50, nmiss, combo):
 def score_pp(user_score, beatmap_id, fc=False):
 	return score_stats(user_score, beatmap_id, fc)['pp']['total']
 
-def user_scores_sort_function(user_scores, key):
-	r = sorted(user_scores, key=lambda x: x[key])
-	if key == 'pass':
-		r.reverse()
-	elif key == 'rank':
-		while not r[0]['rank'] in ['SSH', 'SS', 'SH', 'S']: r.append(r.pop(0))
-	return r
+
 
 # --------------------------------------------------------------------------- #
 
@@ -335,18 +330,9 @@ class OsuAPI:
 
 	logo_url = 'https://i.imgur.com/Req9wGs.png'
 
-	user_scores_sort_by_aliases = {
-		"accuracy": ['accuracy', 'acc'],
-		"max_combo": ['max_combo', 'combo'],
-		"passed": ['passed', 'pass', 'cleared', 'clear'],
-		"pp": ['pp'],
-		"rank": ['rank', 'note'],
-		"score": ['score', 'points']
-	}
-
 	def __init__(self, save=False, save_dir=None):
 		global v1, v2
-		v1 = OsuAPI_v1()
+		# v1 = OsuAPI_v1()
 		v2 = OsuAPI_v2()
 		self.save = save
 		self.save_dir = (save_dir if save_dir[-1] == '/' else save_dir+'/') if save_dir else 'api_v2_outputs/'
@@ -363,13 +349,13 @@ class OsuAPI:
 	def user_exists(self, username):
 		return v2.user_exists(username, 'osu')
 
-	def user_recents(self, username, mode='osu', limit=5):
+	def user_recents(self, username, mode='osu', sort_by=None, limit=5):
 		r = v2.user_recents(username, mode if mode else v2.user_info(username, 'osu')['playmode'], limit)
 		if self.save: save_json(r, self.save_dir+'user_recents.json')
 		return r
 
-	def user_recent(self, username, mode='osu'):
-		r = self.user_recents(username, mode, 1)
+	def user_recent(self, username, mode='osu', sort_by=None):
+		r = self.user_recents(username, mode, sort_by, 1)
 		return [] if r == [] else r[0]
 
 	def user_scores(self, username, beatmap_id, sort_by='pp'):
@@ -377,7 +363,7 @@ class OsuAPI:
 		if self.save:
 			save_json(r, self.save_dir+'user_scores_raw.json')
 			save_json(r['scores'], self.save_dir+'user_scores.json')
-		return [] if r['scores'] == [] else user_scores_sort_function(r['scores'], match_aliases(sort_by, self.user_scores_sort_by_aliases))
+		return r['scores']
 
 	def user_score(self, username, beatmap_id, sort_by='pp'):
 		r = self.user_scores(username, beatmap_id, sort_by)
@@ -392,5 +378,5 @@ class OsuAPI:
 		return v2.osu_file(beatmap_id)
 
 	def close(self):
-		v1.close()
+		# v1.close()
 		v2.close()

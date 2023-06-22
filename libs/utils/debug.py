@@ -1,17 +1,12 @@
-import json, inspect
+import json, inspect, pprint, zlib
+try:
+	from bs4 import BeautifulSoup
+except:
+	import os
+	os.system('pip install beautifulsoup4')
+	from bs4 import BeautifulSoup
 
-def print_var(var):
-	callers_local_vars = inspect.currentframe().f_back.f_locals.items()
-	pprint(str([k for k, v in callers_local_vars if v is var][0])+' = '+str(var), indent=3)
-	print()
-
-def print_json(obj, indent=3):
-	if not type(obj) is dict: obj = json.loads(obj)
-	if type(obj) is str:
-		obj = json.loads(obj)
-	print(json.dumps(obj, indent=indent))
-
-BLACK, RED, GREEN, YELLOW, BLUE, PURPLE, CYAN, WHITE, ORANGE = 30, 31, 32, 33, 34, 35, 36, 37, 38
+BLACK, RED, GREEN, YELLOW, BLUE, PURPLE, CYAN, WHITE = 30, 31, 32, 33, 34, 35, 36, 37
 # in case not all was imported (from debug import *)
 color_codes = {
 	'black': 30,
@@ -21,36 +16,53 @@ color_codes = {
 	'blue': 34,
 	'purple': 35,
 	'cyan': 36,
-	'white': 37,
-	'orange': 38
+	'white': 37
 }
 # make it work for windows?
-def cprint(string, color=30, end='\n'):
+def cprint(string, color=37, end='\n'):
 	if type(color) is str: color = color_codes.get(color.lower())
 	if color:
 		print(f"\033[{color}m{string}\033[0m", end=end)
 	else:
-		print('cprint: Unknown color, available colors are:\n')
+		print(f'cprint: Unknown color ({color}), available colors are:\n')
 		print_json(color_codes)
 
-def print_all_attributes(obj):
+def print_var(var, indent=3, color=37):
+	callers_local_vars = inspect.currentframe().f_back.f_locals.items()
+	cprint(pprint.pformat(str([k for k, v in callers_local_vars if v is var][0])+' = '+str(var), indent=indent), color=color)
+	print()
+
+def _print_json(obj, indent, color):
+	if type(obj) is str or type(obj) is bytes:
+		try:
+			obj = json.loads(obj)
+		except:
+			obj = str(obj)
+			cprint(f'print_json: json.loads() failed loading the provided string or bytes ({obj})')
+			return
+	cprint(json.dumps(obj, indent=indent), color)
+
+# accepts bytes, str, dict or list of them
+def print_json(obj, indent=3, color=37):
+	if type(obj) is list:
+		if obj != []:
+			for o in obj: _print_json(o, indent, color)
+		else:
+			cprint('[]', color=color)
+	else:
+		_print_json(obj, indent, color)
+
+def print_all_attributes(obj, color=37):
 	for attr, value in obj.__iter__():
-		print(f'{attr} = {value}\n\n')
+		cprint(f'{attr} = {value}\n\n', color)
 
-def print_all_items(obj):
+def print_all_items(obj, color=37):
 	for key, value in obj.items():
-		print(f'{key} = {value}\n\n')
+		cprint(f'{key} = {value}\n\n', color)
 
-from libs.utils.web import status_code_text, status_code_category, status_code_category_color
-
-try:
-	from bs4 import BeautifulSoup
-except:
-	os.system('pip install beautifulsoup4')
-	from bs4 import BeautifulSoup
-
-def print_response(r, indent=3):
-
+def print_response(r, indent=3, color=37, content_color=37):
+	if color != 37 and content_color == 37: content_color = color
+	
 	headers = {}
 	for key, value in r.headers.items():
 		headers[key] = value
@@ -67,9 +79,8 @@ def print_response(r, indent=3):
 		"elapsed": str(r.elapsed)
 	}
 
-	print(json.dumps(saved_response, indent=indent))
+	cprint(json.dumps(saved_response, indent=indent), color=color)
 	if r._content != b'':
-		
 		# decode
 
 		content_encoding = None
@@ -80,7 +91,8 @@ def print_response(r, indent=3):
 
 		if content_encoding in headers:
 			if 'gzip' in headers[content_encoding] or 'compress' in headers[content_encoding] or 'deflate' in headers[content_encoding]:
-				content = zlib.decompress(r._content)
+				# content = zlib.decompress(r._content) fails :c
+				content = r._content.decode('utf-8', 'ignore')
 			elif 'br' in headers[content_encoding]:
 				# content = brotli.decompress(r._content) fails :c
 				content = r._content.decode('utf-8', 'ignore')
@@ -97,12 +109,12 @@ def print_response(r, indent=3):
 
 		if content_type_in_headers:
 			if 'text/plain' in headers[content_type]:
-				print(content)
+				cprint(content, color=content_color)
 			elif 'text/html' in headers[content_type]:
-				print(BeautifulSoup(content, 'html.parser').prettify(indent_width=indent))
+				cprint(BeautifulSoup(content, 'html.parser').prettify(indent_width=indent), color=content_color)
 			elif 'application/json' in headers[content_type]:
-				print(json.dumps(json.loads(content), indent=indent))
+				cprint(json.dumps(json.loads(content), indent=indent), color=content_color)
 			elif 'application/x-www-form-urlencoded' in headers[content_type]:
-				print(decode_url(content))
+				cprint(decode_url(content), color=content_color)
 		else:
-			print(content)
+			cprint(content, color=content_color)
