@@ -14,3 +14,8 @@ class str(str):
 		for c in self:
 			r += '\\'+oct(ord(c))[2:]
 		return r
+	def to_int(self):
+		try:
+			return int(self)
+		except:
+			return None

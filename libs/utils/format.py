@@ -84,7 +84,7 @@ def format_time_ago(date_str, format_str):
 	else:
 		return f"{seconds} second{'s' if seconds > 1 else ''}"
 
-def ansi_text(text, esc_format=None, esc=None, end=None, black_bg=False):
+def ansi_text(text, esc_format=None, esc=None, end=None):
 	# replaces occurences of:
 	# [color <options>]
 	
@@ -98,7 +98,7 @@ def ansi_text(text, esc_format=None, esc=None, end=None, black_bg=False):
 
 	# esc arg specifies how the esc character should be written, overwrite esc_format
 	# esc_format arg changes how the escape character will be put in the output:
-	esc_formats = {'shell': '\\e', 'ascii hex': '\\0x1B', 'ascii oct': '\\033', 'json': '\\u001B'}
+	esc_formats = {'shell': '\\e', 'ascii_hex': '\\0x1B', 'ascii_oct': '\\033', 'json': '\\u001B'}
 	if not esc:
 		esc = ''
 		if esc_format:
@@ -106,6 +106,7 @@ def ansi_text(text, esc_format=None, esc=None, end=None, black_bg=False):
 				esc = esc_formats[esc_format]
 			else:
 				cprint(f'ansi_text: Unknown format ({esc_format})', 'red')
+				return None
 	matches = re.finditer(r"\[[?*?_?(bg)?(hi)a-z\s]+\]", text)
 	try:
 		offset = 0
@@ -136,6 +137,7 @@ def ansi_text(text, esc_format=None, esc=None, end=None, black_bg=False):
 				match = match.replace('  ', ' ')
 			match = match.replace(' ', '')
 			match = match.strip()
+
 			if match == 'reset':
 				new = esc+'[0m'
 			else:
@@ -145,12 +147,11 @@ def ansi_text(text, esc_format=None, esc=None, end=None, black_bg=False):
 			text = text[:st]+new+text[ed:]
 	except Exception as e:
 		cprint(f'ansi_text: failed ({e})', 'red')
-	left, right = '', ''
-	if black_bg: left, right = esc+'[40m', esc+'[0m'
+		return None
 	r = text+end if end else text+esc+'[0m'
-	return left+r+right
+	return r
 
-def parse(input_string, options):
+def parse(input_string, options, first=False):
 	# consider that shorts begin with '-' and longs with '--'
 	# options format:
 	# options = {
@@ -166,7 +167,7 @@ def parse(input_string, options):
 	for value in options.values():
 		if value[0]: parsed_options.append(None)
 		else: parsed_options.append(False)
-	i = 0
+	i = 0 if first else 1
 	while i < len(l):
 		e = l[i]
 		is_arg = True
@@ -182,7 +183,7 @@ def parse(input_string, options):
 					parsed_options[k] = True
 				is_arg = False
 				break
-			elif len(e) >= 2 and e[0] == '-' and e[1] == short:
+			elif e[0] != '_' and len(e) >= 2 and e[0] == '-' and e[1] == short:
 				
 				if len(e) == 2:
 					if takes_arg:

@@ -8,6 +8,7 @@ https://discord.com/api/oauth2/authorize?
 	scope=applications.commands%20bot%20guilds%20guilds.members.read%20identify%20messages.read
 '''
 
+import math
 from libs.osu_api import *
 from libs.perf import *
 try:
@@ -32,8 +33,8 @@ discord_headers = {
 	# "User-Agent": "DiscordBot (https://discord.com/api, 10)"
 }
 
+# cache
 users = {}
-users_cache_path = 'users.json'
 
 gamemode_texts = {
 	"osu": 'osu! Standard',
@@ -75,14 +76,49 @@ scores_sorts = {
 	"score": ['points']
 }
 
+ACTIVE_BUTTON = discord.ui.Button(
+	style=discord.ButtonStyle.secondary,
+	custom_id='active_button',
+	disabled=True,
+	label='Active'
+)
+
+running_tasks = set()
+RUNNING = True
+
 ########################################### data ###########################################
 
 
 ########################################### functions ###########################################
 
-import discord
+async def load_users():
+	global users
+	if os.path.exists('cache/users.json'):
+		try:
+			users = load_json('cache/users.json')
+		except:
+			cprint('load_users: failed to load '+'cache/users.json', RED)
+	else:
+		cprint(f'load_users: cache/users.json doesn\'t exists', RED)
+
+async def save_users():
+	try:
+		save_json(users, 'cache/users.json')
+	except:
+		cprint('save_users: failed to save cache/users.json', RED)
+
+async def close():
+	global osu_api, RUNNING, running_tasks
+	osu_api.close()
+	RUNNING = False
+	while any(not task.done() for task in running_tasks): await asyncio.sleep(1)
+	await save_users()
+
+async def is_author(interaction):
+	return interaction.user.id == ctx.author.id
 
 def load_raw(path):
+	# file at path contains a dict returned by auto code embed generator
 	raw = ''
 	with open(path, 'r') as f:
 		raw = str(f.read())
@@ -115,45 +151,11 @@ def load_raw(path):
 		exit()
 	return r
 
-def dict_to_embed(embed_dict):
-	embed = discord.Embed(
-		type=embed_dict.get('type', 'rich'),
-		title=embed_dict.get('title', None),
-		description=embed_dict.get('description', None),
-		color=embed_dict.get('color', discord.Color.default().value),
-		timestamp=embed_dict.get('timestamp', None),
-		url=embed_dict.get('url', None)
-	)
-	
-	fields = embed_dict.get('fields', [])
-	for field in fields:
-		name = field.get('name', '')
-		value = field.get('value', '')
-		inline = field.get('inline', False)
-		embed.add_field(name=name, value=value, inline=inline)
-	
-	image = embed_dict.get('image', {})
-	embed.set_image(url=image.get('url', None))
-	
-	thumbnail = embed_dict.get('thumbnail', {})
-	embed.set_thumbnail(url=thumbnail.get('url', None))
-	
-	author = embed_dict.get('author', {})
-	embed.set_author(
-		name=author.get('name', None),
-		url=author.get('url', None),
-		icon_url=author.get('icon_url', None)
-	)
-	
-	footer = embed_dict.get('footer', {})	
-	embed.set_footer(
-		text=footer.get('text', None),
-		icon_url=footer.get('icon_url', None)
-	)
-
-	return embed
-
-def create_message(message, channel_id, channel=None):
+def create_message(message, channel_id=None, channel=None):
+	if not channel_id and not channel:
+		cprint('create_message: need at least channel_id', 'red')
+		return
+	# message as a dict returned by auto code embed generator
 	if type(message) is dict:
 		try:
 			message = json.dumps(message)
@@ -162,6 +164,7 @@ def create_message(message, channel_id, channel=None):
 			return
 	discord_headers['Content-Type'] = 'application/json'
 	try:
+		if not channel_id: channel_id = channel.id
 		r = requests.request('POST', f'https://discord.com/api/v10/channels/{channel_id}/messages', data=message, headers=discord_headers)
 	except Exception as e:
 		cprint(f'create_message: failed to make POST request ({e})', 'red')
@@ -283,37 +286,45 @@ async def score_menu(self, ctx, embed_list, files=[], message:discord.Message=No
 			pass
 		return await self.menu(ctx, embed_list, message=message, page=next_page, timeout=timeout)
 
+def get_discord_user_info(user_id):
+	r = requests.request('GET', f'https://discord.com/api/v10/users/{user_id}', headers=discord_headers)
+	return json.loads(r.content)
+
+def get_discord_channel_message_info(channel_id, message_id):
+	r = requests.request('GET', f'https://discord.com/api/v10/channels/{channel_id}/messages/{message_id}', headers=discord_headers)
+	return json.loads(r.content)
+
+def get_member(member_id):
+	return discord.utils.find(lambda m: m.id == member_id, bot.get_all_members())
+
 ########################################### functions ###########################################
 
 
 ########################################### osuset ###########################################
 
-async def load_users():
-	global users
-	if os.path.exists(users_cache_path):
-		try:
-			users = load_json(users_cache_path)
-		except:
-			cprint('load_users: failed to load '+users_cache_path, RED)
-	else:
-		cprint(f'load_users: {users_cache_path} doesn\'t exists', RED)
-
-async def save_users():
-	try:
-		save_json(users, users_cache_path)
-	except:
-		cprint('save_users: failed to save '+users_cache_path, RED)
-
 def get_users():
 	return users
 
-def get_username(discord_user_id):
+def get_user_info(discord_user_id):
 	return users.get(str(discord_user_id))
 
 async def osuset_cmd(ctx, username):
 	user_info = osu_api.user_info(username)
 	if user_info:
-		users[str(ctx.message.author.id)] = username
+		discord_user_id = str(ctx.message.author.id)
+		if discord_user_id in users:
+			users[discord_user_id]['osu']['username'] = username
+		else:
+			users[discord_user_id] = {
+				"osu": {
+					"username": username,
+					"avatar_hash": None
+				},
+				"discord": {
+					"avatar_hash": None,
+					"display_avatar_hash": None
+				}
+			}
 		await ctx.send(f":white_check_mark: **{ctx.message.author}, your `Bancho` username has been edited to `{username}`**")
 	else:
 		await ctx.send(f'`{username}` **doesn\'t exist in the** `Bancho` **database.**')
@@ -399,9 +410,9 @@ async def card_cmd(ctx, username, mode):
 	if username:
 		await send_user_card(ctx, username, mode)
 	else:
-		username = get_username(ctx.message.author.id)
-		if username:
-			await send_user_card(ctx, username, mode)
+		user_info = get_user_info(ctx.message.author.id)
+		if user_info:
+			await send_user_card(ctx, user_info['osu']['username'], mode)
 		else:
 			await ctx.send('First use `~osuset <osu! pseudo>`')
 
@@ -412,11 +423,11 @@ recent_help_msg = '''\
 Usage:
 	~recent|rs <username>
 Description:
-	Fetches <username> recent scores.
-	<username> argument is optional.
+	Fetches 100 of <username> recent scores.
+	If no username is provided, it will use the user's osu! profile set with ~osuset.
 Options:
 	Filters:
-		-m|mode			<mode>			Filters out any other mode.
+		-m|mode			<mode>			Filters out all other mode.
 										<mode> options:
 											osu 	(std, standard, 0)
 											taiko 	(drum, drums, 1)
@@ -425,13 +436,14 @@ Options:
 		
 		+<mods>							Filters out any score that
 										lack at least one of the mods.
+										Scores with the most mods will show up first.
 										<mods> options:
 											NF, SD, PF, EZ, HR, HD, DT,
 											NC, HT, FL, SO, FI, MR
 
-		-p|pass|passed|clear|cleared    Filters out all failed scores.
+		-p|pass|passed|clear|cleared    Filters out failed scores.
 	Sorts:
-		-s|sort			<sort>			Sorts recent scores by <sort>.
+		-s|sort			<sort>			Sorts recent scores.
 										<sort> options:
 											pp
 											score
@@ -444,11 +456,13 @@ Options:
 										and recent scores titles.
 										Overwrites any other sorting.
 	Formating:
-		-l|list							Lists results.
+		-l|list							Lists results, 5 scores per page.
 
 		-i|index		<index>			Gets score <index> from
 										filtered and sorted results
-										or start listing at <index>. (1-100)\
+										or start listing at <index>. (1-100)
+
+		default							Equivalent to -i 1.
 '''
 # recent_help_embed = discord.Embed(description=recent_help_msg, colour = 1752220)
 
@@ -559,7 +573,7 @@ def build_recents_list_embed(ctx, user_info, user_recents, mode):
 		pages.append(em)
 	return top_txt, pages
 
-async def send_user_recent_card(ctx, username, passed, mode, list_, best, index, search):
+async def send_user_recent_card(ctx, username, mode, passed, list_, best, index, search):
 	# username
 	user_info = osu_api.user_info(username)
 	if not user_info:
@@ -594,9 +608,230 @@ async def send_user_recent_card(ctx, username, passed, mode, list_, best, index,
 		# list
 		msg, pages = build_recents_list_embed(ctx, user_info, user_recents, mode) if list_ else build_recents_embed(ctx, user_info, user_recents, mode)
 	await bot.menu(ctx, pages, page=page, message=msg)
-			
+
+recent_options = {
+	# format:
+	# "short": [takes_arg, longs]
+	"h": [False, 'help'],
+	"m": [True, 'mode'],
+	"p": [False, 'pass', 'passed', 'clear', 'cleared'],
+	"s": [True, 'sort'],
+	"?": [True, 'search', 'find'],
+	"l": [False, 'list'],
+	"i": [True, 'index']
+}
+
+async def recent_cmd(ctx, arguments, options):
+	if len(usernames) == 0:
+		user_info = get_user_info(ctx.message.author.id)
+		if user_info:
+			await send_user_recent_card(ctx, user_info['osu']['username'], *options)
+		else:
+			await ctx.channel.send('First use `~osuset <osu! pseudo>`')
+			return
+	else:
+		for username in usernames:
+			await send_user_recent_card(ctx, username, *options)
 
 ########################################### recent ###########################################
+
+
+########################################### ainsi ###########################################
+
+def ansi_text_discord(text, esc_format, esc, end, black_bg):
+	r = ansi_text(text, esc_format, esc, end)
+	return (esc+'[40m'+r+esc+'[0m' if black_bg else r) if r else ''
+
+ansi_options = {
+	# format:
+	# "short": [takes_arg, longs]
+	"h": [False, 'help'],
+	"f": [True, 'format', 'esc-format'],
+	"_": [True, 'escape', 'esc'],
+	"e": [True, 'end'],
+	"b": [False, 'black_bg', 'black']
+}
+
+async def ansi_cmd(ctx, arguments, *options):
+	timeout = False
+	view = discord.ui.View(timeout=300)
+	view.interaction_check = is_author
+	async def on_timeout():
+		nonlocal timeout
+		timeout = True
+	view.on_timeout = on_timeout
+	view.add_item(ACTIVE_BUTTON)
+
+	out = capture_console_output(ansi_text_discord, ' '.join(arguments), *options)
+	msg = await ctx.channel.send('```ansi\n'+out+'```', view=view)
+	wait = 0
+	max_wait = 30
+	last_edit_time = ctx.message.created_at
+	while not timeout and RUNNING:
+		await asyncio.sleep(1)
+		print(f'ansi: waiting {ctx.message.author.name}... '+str(wait))
+		wait += 1
+		if wait == max_wait: break
+		async for entry in ctx.channel.history(limit=1, before=msg):
+			if not entry.edited_at or entry.edited_at == last_edit_time or (entry.edited_at - last_edit_time).total_seconds() >= max_wait:
+				continue
+			arguments, options = parse(entry.content, ansi_options)
+			if options[0]:
+				await msg.edit(content='ansi help msg')
+				wait = 0
+				last_edit_time = entry.edited_at
+				break
+			out = capture_console_output(ansi_text_discord, ' '.join(arguments), *options[1:])
+			await msg.edit(content='```ansi\n'+out+'```')
+			wait = 0
+			last_edit_time = entry.edited_at
+			break
+	
+	last_content = '```ansi\n'+out+'```'
+	if timeout: last_content = 'time\'s up\n' + last_content
+	await msg.edit(content=last_content, view=None)
+
+########################################### ainsi ###########################################
+
+
+########################################### avatar ###########################################
+
+async def cache_member_avatar(member, avatar_hash, account, path, size, max_size):
+	if size:
+		member.avatar.with_size(size).save(path)
+	else:
+		
+		base_url, _ = deconstruct_get_url(member.avatar.url)
+		member.avatar.url = base_url + f'?size={max_size}'
+		await member.avatar.save(path)
+	if account:
+		if member.id in users:
+			users[str(member.id)]['discord']['display_avatar_hash'] = avatar_hash
+		else:
+			users[str(member.id)] = {
+				"osu": {
+					"username": None,
+					"avatar_hash": None
+				},
+				"discord": {
+					"avatar_hash": avatar_hash,
+					"display_avatar_hash": None
+				}
+			}
+	else:
+		if member.id in users:
+			users[str(member.id)]['discord']['avatar_hash'] = avatar_hash
+		else:
+			users[str(member.id)] = {
+				"osu": {
+					"username": None,
+				},
+				"discord": {
+				}
+			}
+
+def get_avatar(member_id, avatar_hash, account, max_size):
+	display_txt = '_display' if account else ''
+	r = requests.request('GET', f'https://cdn.discordapp.com/avatars/{member_id}/{avatar_hash}.png?size={max_size}')
+	if not r:
+		cprint(f'dl_avatar: failed to download avatar {avatar_hash} from {member_id} (size {max_size})', 'red')
+		print_response(r)
+	return r
+
+def dl_avatar(member_id, avatar_hash, account, max_size, path):
+	with open(path, 'w+') as f:
+		f.write(get_avatar(member_id, avatar_hash, max_size).content)
+
+def extract_id(i, args, member):
+	if args[i] == str(member.id): return args.pop(i)
+	return None
+def extract_username(i, args, member):
+	if args[i] == member.name: return args.pop(i)
+	return None
+
+async def avatar_cmd_discord(args, account, size, max_size):
+	avatars = {}
+	extracts = []
+	for i, arg in enumerate(args):
+		if arg.isdigit():
+			extracts.append(extract_id)
+		elif arg.isalpha():
+			extracts.append(extract_username)
+		else:
+			args[i] = arg[2:-1]
+			extracts.append(extract_id)
+	for member in bot.get_all_members():
+		skip = True
+		for i in range(len(args)):
+			if extracts[i](i, args, member):
+				extracts.pop(i)
+				skip = False
+		if skip: continue
+		path = f'cache/discord/avatars/{member.id}'
+		if not os.path.exists(path):
+			os.mkdir(path)
+		if member.avatar or member.display_avatar:
+			avatar, display_avatar = str(member.avatar), str(member.display_avatar)
+			max_size = ((2 ** max(4, max_size)) if max_size <= 12 else min(4096, 2 ** round(math.log2(max_size)))) if max_size else 4096
+			size = max(16, min(4096, size)) if size else 4096
+			if account:
+				base_url, _ = deconstruct_get_url(avatar)
+				base_url = base_url[len('https://cdn.discordapp.com/avatars/'):]
+				avatar_hash = base_url[:base_url.find('.')].split('/')[1]
+				dl_avatar(member.id, avatar_hash, max_size, f'{path}/{avatar_hash}.png')
+			else:
+				if 'guilds' in display_avatar:
+					base_url, _ = deconstruct_get_url(avatar)
+					base_url = str(base_url[len('https://cdn.discordapp.com/guilds/'):])
+					tmp = base_url[base_url.finds('/')[-1]+1:]
+					avatar_hash = tmp[:tmp.find('.')]
+				else:
+					base_url, _ = deconstruct_get_url(display_avatar)
+					base_url = base_url[len('https://cdn.discordapp.com/avatars/'):]
+					avatar_hash = base_url[:base_url.find('.')].split('/')[1]
+				dl_avatar(member.id, avatar_hash, max_size, f'{path}/{avatar_hash}.png')
+			
+			if os.path.exists(path+f'/{size}'):
+				...
+		else:
+			path += f'cache/discord/avatars/default/' + member.default_avatar[len('https://cdn.discordapp.com/embed/avatars/')]
+		
+		avatars[member.name] = path+'.png'
+		if args == []: break
+	
+	return avatars
+
+
+async def avatar_cmd_osu(user_ids, size, max_size):
+	avatars = {}
+	
+	return avatars
+
+avatar_options = {
+	"h": [False, 'help'],
+	"o": [False, 'osu'],
+	"a": [False, 'account'],
+	"s": [True, 'size'],
+	"m": [True, 'max_size']
+}
+
+async def avatar_cmd(ctx, args, osu, account, size, max_size):
+	if osu:
+		avatars = await avatar_cmd_osu(args, size, max_size)
+	else:
+		avatars = await avatar_cmd_discord(args, account, size, max_size)
+	content = 'Avatars of: '
+	files = []
+	for username, path in avatars.items():
+		content += f'{username}, '
+		files.append(discord.File(path))
+	if len(files) == 1:
+		await ctx.channel.send(content=content[:-2], file=files[0])
+	else:
+		await ctx.channel.send(content=content[:-2], files=files)
+
+########################################### avatar ###########################################
+
 
 bot = commands.Bot(command_prefix='~', intents=discord.Intents.all())
 bot.score_menu = score_menu

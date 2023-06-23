@@ -1,4 +1,4 @@
-import sys, copy, asyncio
+import sys, copy
 from math import *
 from libs.utils.debug import *
 from libs.utils.format import *
@@ -329,6 +329,8 @@ class OsuAPI_v2:
 class OsuAPI:
 
 	logo_url = 'https://i.imgur.com/Req9wGs.png'
+	save = None
+	save_dir = None
 
 	def __init__(self, save=False, save_dir=None):
 		global v1, v2

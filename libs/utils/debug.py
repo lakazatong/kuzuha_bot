@@ -52,9 +52,18 @@ def print_json(obj, indent=3, color=37):
 	else:
 		_print_json(obj, indent, color)
 
-def print_all_attributes(obj, color=37):
-	for attr, value in obj.__iter__():
-		cprint(f'{attr} = {value}\n\n', color)
+def print_all_attributes(obj, builtin=False, color=37):
+	if builtin:
+		for attr in dir(obj):
+			value = getattr(obj, attr)
+			cprint(f'{attr} = {value}\n\n', color)
+	else:
+		for attr in dir(obj):
+			if not attr.startswith("__"):
+				value = getattr(obj, attr)
+				cprint(f'{attr} = {value}\n\n', color)
+
+
 
 def print_all_items(obj, color=37):
 	for key, value in obj.items():

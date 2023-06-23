@@ -1,4 +1,4 @@
-import os, threading, platform, io, sys
+import os, threading, platform, io, sys, asyncio
 from libs.utils.debug import cprint
 
 def from_windows():
@@ -38,3 +38,12 @@ def capture_console_output(func, *args):
 		return captured_output
 	else:
 		return return_value
+
+async def check_loop(check_func, timeout, *args):
+	wait = 0
+	while wait < timeout:
+		r = await check_func(*args)
+		if r: return True
+		await asyncio.sleep(1)
+		wait += 1
+	return False
