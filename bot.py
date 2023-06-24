@@ -6,6 +6,18 @@ from kuzuha import *
 async def on_ready():
 	await load_users()
 	cprint(f'Logged in as {bot.user.name} ({bot.user.id})', GREEN)
+	if os.path.exists('reloading_message_info'):
+		with open('reloading_message_info', 'r') as f:
+			await delete_message(*f.read().split('.'))
+		os.remove('reloading_message_info')
+
+@bot.event
+async def on_message(message):
+	if bot.user.mentioned_in(message) and not message.author.bot:
+		heart_emoji = '\N{HEAVY BLACK HEART}'
+		await message.add_reaction(heart_emoji)
+
+	await bot.process_commands(message)
 
 ######### system #########
 
@@ -22,9 +34,9 @@ async def quit(ctx):
 @commands.is_owner()
 async def restart(ctx):
 	await close()
-	await ctx.message.delete()
+	with open('reloading_message_info', 'w+') as f: f.write(f'{ctx.channel.id}.{ctx.message.id}')
 	os.execv(sys.executable, ['python3'] + sys.argv)
-
+	
 # sends users json
 @bot.command()
 async def send_users(ctx):
@@ -102,9 +114,8 @@ async def ansi(ctx):
 async def avatar(ctx):
 	arguments, options = parse(ctx.message.content, avatar_options)
 	if options[0]:
-		ctx.channel.send('avatar help')
+		await ctx.channel.send('avatar help')
 		return
 	await avatar_cmd(ctx, [str(ctx.message.author.id)], *options[1:]) if arguments == [] else await avatar_cmd(ctx, arguments, *options[1:])
-
 
 bot.run(discord_bot_token)

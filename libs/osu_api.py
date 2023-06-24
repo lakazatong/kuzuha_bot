@@ -2,8 +2,10 @@ import sys, copy
 from math import *
 from libs.utils.debug import *
 from libs.utils.format import *
+from libs.utils.img import *
 from libs.utils.json import *
 from libs.utils.list import *
+from libs.utils.math import *
 from libs.utils.os import *
 from libs.utils.str import *
 from libs.utils.unsorted import *
@@ -145,18 +147,18 @@ class OsuAPI_v1:
 		with open('secrets/osu_api_v1_key', 'r') as f:
 			self.key = f.read()
 
-	def user_recents(self, username, mode, limit):
+	def user_recents(self, user, mode, limit):
 		params = {
 			"k": self.key,
-			"u": username,
+			"u": user,
 			"m": self.mode_code[mode],
 			"limit": limit
 		}
 		build_get_url('https://osu.ppy.sh/api/get_user_recent', params)
 		return json.loads(requests.request('GET', url).content)
 
-	def user_recent(self, username, mode):
-		return self.user_recents(username, mode, 1)
+	def user_recent(self, user, mode):
+		return self.user_recents(user, mode, 1)
 
 	def close(self):
 		...
@@ -279,21 +281,19 @@ class OsuAPI_v2:
 		else:
 			self.first_manual_startup()
 
-	def user_info(self, username, mode):
-		username_url = username.replace(' ', '%20')
-		r = requests.request('GET', f'https://osu.ppy.sh/api/v2/users/{username_url}/{mode}', headers=self.json_headers)
+	def user_info(self, user, mode):
+		r = requests.request('GET', f'https://osu.ppy.sh/api/v2/users/{user}/{mode}', headers=self.json_headers)
 		r_json = json.loads(r.content)
 		return r_json if r.status_code == 200 else None
 
-	def user_exists(self, username, mode):
-		username_url = username.replace(' ', '%20')
-		return requests.request('GET', f'https://osu.ppy.sh/api/v2/users/{username_url}/{mode}', headers=self.json_headers).status_code == 200
+	def user_exists(self, user, mode):
+		return requests.request('GET', f'https://osu.ppy.sh/api/v2/users/{user}/{mode}', headers=self.json_headers).status_code == 200
 
 	def beatmap_info(self, beatmap_id):
 		return json.loads(requests.request('GET', 'https://osu.ppy.sh/api/v2/beatmaps/'+str(beatmap_id), headers=self.json_headers).content)
 
-	def user_recents(self, username, mode, limit):
-		user_info = v2.user_info(username, 'osu')
+	def user_recents(self, user, mode, limit):
+		user_info = v2.user_info(user, 'osu')
 		if not user_info: return []
 		user_id = user_info['id']
 		params = {
@@ -308,8 +308,8 @@ class OsuAPI_v2:
 		content = requests.request('GET', f'https://osu.ppy.sh/osu/{beatmap_id}').content
 		return content.decode('utf-8') if type(content) is bytes else content
 
-	def user_scores(self, username, beatmap_id):
-		user_info = v2.user_info(username, 'osu')
+	def user_scores(self, user, beatmap_id):
+		user_info = v2.user_info(user, 'osu')
 		if not user_info: return []
 		user_id = user_info['id']
 		url = f'https://osu.ppy.sh/api/v2/beatmaps/{beatmap_id}/scores/users/{user_id}/all'
@@ -339,8 +339,9 @@ class OsuAPI:
 		self.save = save
 		self.save_dir = (save_dir if save_dir[-1] == '/' else save_dir+'/') if save_dir else 'api_v2_outputs/'
 
-	def user_info(self, username, mode='osu'):
-		raw = v2.user_info(username, mode)
+	def user_info(self, user, mode='osu'):
+		if not user.isdigit(): user = user.replace(' ', '%20')
+		raw = v2.user_info(user, mode)
 		if not raw: return None
 		r = extract_user_data(raw)
 		if self.save:
@@ -348,27 +349,27 @@ class OsuAPI:
 			save_json(r, self.save_dir+'user_info.json')
 		return r
 
-	def user_exists(self, username):
-		return v2.user_exists(username, 'osu')
+	def user_exists(self, user):
+		return v2.user_exists(user, 'osu')
 
-	def user_recents(self, username, mode='osu', sort_by=None, limit=5):
-		r = v2.user_recents(username, mode if mode else v2.user_info(username, 'osu')['playmode'], limit)
+	def user_recents(self, user, mode='osu', sort_by=None, limit=5):
+		r = v2.user_recents(user, mode if mode else v2.user_info(user, 'osu')['playmode'], limit)
 		if self.save: save_json(r, self.save_dir+'user_recents.json')
 		return r
 
-	def user_recent(self, username, mode='osu', sort_by=None):
-		r = self.user_recents(username, mode, sort_by, 1)
+	def user_recent(self, user, mode='osu', sort_by=None):
+		r = self.user_recents(user, mode, sort_by, 1)
 		return [] if r == [] else r[0]
 
-	def user_scores(self, username, beatmap_id, sort_by='pp'):
-		r = v2.user_scores(username, beatmap_id)
+	def user_scores(self, user, beatmap_id, sort_by='pp'):
+		r = v2.user_scores(user, beatmap_id)
 		if self.save:
 			save_json(r, self.save_dir+'user_scores_raw.json')
 			save_json(r['scores'], self.save_dir+'user_scores.json')
 		return r['scores']
 
-	def user_score(self, username, beatmap_id, sort_by='pp'):
-		r = self.user_scores(username, beatmap_id, sort_by)
+	def user_score(self, user, beatmap_id, sort_by='pp'):
+		r = self.user_scores(user, beatmap_id, sort_by)
 		return r if r == [] else r[0]
 
 	def beatmap_info(self, beatmap_id):

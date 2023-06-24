@@ -91,6 +91,11 @@ RUNNING = True
 
 ########################################### functions ###########################################
 
+async def delete_message(channel_id, message_id):
+	channel = await bot.fetch_channel(channel_id)
+	message = await channel.fetch_message(message_id)
+	await message.delete()
+
 async def load_users():
 	global users
 	if os.path.exists('cache/users.json'):
@@ -696,66 +701,54 @@ async def ansi_cmd(ctx, arguments, *options):
 
 ########################################### avatar ###########################################
 
-async def cache_member_avatar(member, avatar_hash, account, path, size, max_size):
-	if size:
-		member.avatar.with_size(size).save(path)
+def get_discord_avatar(member_id, avatar_hash, guild_id):
+	if guild_id:
+		r = requests.request('GET', f'https://cdn.discordapp.com/guilds/{guild_id}/users/{member_id}/avatars/{avatar_hash}.png?size=4096')
 	else:
-		
-		base_url, _ = deconstruct_get_url(member.avatar.url)
-		member.avatar.url = base_url + f'?size={max_size}'
-		await member.avatar.save(path)
-	if account:
-		if member.id in users:
-			users[str(member.id)]['discord']['display_avatar_hash'] = avatar_hash
-		else:
-			users[str(member.id)] = {
-				"osu": {
-					"username": None,
-					"avatar_hash": None
-				},
-				"discord": {
-					"avatar_hash": avatar_hash,
-					"display_avatar_hash": None
-				}
-			}
-	else:
-		if member.id in users:
-			users[str(member.id)]['discord']['avatar_hash'] = avatar_hash
-		else:
-			users[str(member.id)] = {
-				"osu": {
-					"username": None,
-				},
-				"discord": {
-				}
-			}
-
-def get_avatar(member_id, avatar_hash, account, max_size):
-	display_txt = '_display' if account else ''
-	r = requests.request('GET', f'https://cdn.discordapp.com/avatars/{member_id}/{avatar_hash}.png?size={max_size}')
+		r = requests.request('GET', f'https://cdn.discordapp.com/avatars/{member_id}/{avatar_hash}.png?size=4096')
 	if not r:
-		cprint(f'dl_avatar: failed to download avatar {avatar_hash} from {member_id} (size {max_size})', 'red')
+		cprint(f'get_discord_avatar: failed to download avatar {avatar_hash} from {member_id}', 'red')
 		print_response(r)
 	return r
 
-def dl_avatar(member_id, avatar_hash, account, max_size, path):
-	with open(path, 'w+') as f:
-		f.write(get_avatar(member_id, avatar_hash, max_size).content)
+def get_osu_avatar(avatar_url):
+	r = requests.request('GET', avatar_url)
+	if not r:
+		cprint(f'get_osu_avatar: failed to download {avatar_url}', 'red')
+		print_response(r)
+	return r
+
+def dl_avatar(r, path, size):
+	maximum_avatar_size, _ = get_png_size(r.content)
+	with open(path+'/max', 'w+') as f: f.write(str(maximum_avatar_size))
+	maximum_avatar_path = f'{path}/{maximum_avatar_size}.png'
+	with open(maximum_avatar_path, 'wb+') as f: f.write(r.content)
+	if size and size != maximum_avatar_size: resize_image(maximum_avatar_path, f'{path}/{size}.png', size, size)
+	return maximum_avatar_size
+
+def dl_discord_avatar(member_id, avatar_hash, path, size, guild_id):
+	r = get_discord_avatar(member_id, avatar_hash, guild_id)
+	return dl_avatar(r, path, size)
+
+def dl_osu_avatar(avatar_url, path, size):
+	r = get_osu_avatar(avatar_url)
+	return dl_avatar(r, path, size)
 
 def extract_id(i, args, member):
 	if args[i] == str(member.id): return args.pop(i)
 	return None
+
 def extract_username(i, args, member):
-	if args[i] == member.name: return args.pop(i)
+	if args[i].lower() == member.name.lower(): return args.pop(i)
 	return None
 
-async def avatar_cmd_discord(args, account, size, max_size):
+async def avatar_cmd_discord(args, account, size):
 	avatars = {}
 	extracts = []
 	for i, arg in enumerate(args):
 		if arg.isdigit():
 			extracts.append(extract_id)
-		elif arg.isalpha():
+		elif all([not forbidden in arg for forbidden in ['@', '#', ':', '```', 'discord']]):
 			extracts.append(extract_username)
 		else:
 			args[i] = arg[2:-1]
@@ -766,69 +759,135 @@ async def avatar_cmd_discord(args, account, size, max_size):
 			if extracts[i](i, args, member):
 				extracts.pop(i)
 				skip = False
+				break
 		if skip: continue
 		path = f'cache/discord/avatars/{member.id}'
 		if not os.path.exists(path):
 			os.mkdir(path)
+			os.mkdir(path+'/account')
+			os.mkdir(path+'/guilds')
 		if member.avatar or member.display_avatar:
 			avatar, display_avatar = str(member.avatar), str(member.display_avatar)
-			max_size = ((2 ** max(4, max_size)) if max_size <= 12 else min(4096, 2 ** round(math.log2(max_size)))) if max_size else 4096
-			size = max(16, min(4096, size)) if size else 4096
+			if size:
+				size = max(16, min(4096, int(size)))
+			guild_id = None
 			if account:
 				base_url, _ = deconstruct_get_url(avatar)
 				base_url = base_url[len('https://cdn.discordapp.com/avatars/'):]
 				avatar_hash = base_url[:base_url.find('.')].split('/')[1]
-				dl_avatar(member.id, avatar_hash, max_size, f'{path}/{avatar_hash}.png')
+				path += '/account'
 			else:
 				if 'guilds' in display_avatar:
-					base_url, _ = deconstruct_get_url(avatar)
-					base_url = str(base_url[len('https://cdn.discordapp.com/guilds/'):])
-					tmp = base_url[base_url.finds('/')[-1]+1:]
-					avatar_hash = tmp[:tmp.find('.')]
+					print(display_avatar)
+					base_url, _ = deconstruct_get_url(display_avatar)
+					tmp = base_url[len('https://cdn.discordapp.com/guilds/'):]
+					tmp = tmp[:tmp.find('.')]
+					split = tmp.split('/')
+					guild_id, avatar_hash = split[0], split[4]
+					print(guild_id, avatar_hash)
+					path += f'/guilds/{guild_id}'
+					if not os.path.exists(path): os.mkdir(path)
 				else:
 					base_url, _ = deconstruct_get_url(display_avatar)
 					base_url = base_url[len('https://cdn.discordapp.com/avatars/'):]
 					avatar_hash = base_url[:base_url.find('.')].split('/')[1]
-				dl_avatar(member.id, avatar_hash, max_size, f'{path}/{avatar_hash}.png')
-			
-			if os.path.exists(path+f'/{size}'):
-				...
+					path += '/account'
+			path += f'/{avatar_hash}'
+			if os.path.exists(path): 
+				maximum_avatar_size = None
+				with open(f'{path}/max', 'r') as f: maximum_avatar_size = int(f.read())
+				if size:
+					if size != maximum_avatar_size:
+						resize_image(f'{path}/{maximum_avatar_size}.png', f'{path}/{size}.png', size, size)
+				else:
+					size = maximum_avatar_size
+			else:
+				os.mkdir(path)
+				size = dl_discord_avatar(member.id, avatar_hash, path, size, guild_id)
+			path += f'/{size}'
 		else:
 			path += f'cache/discord/avatars/default/' + member.default_avatar[len('https://cdn.discordapp.com/embed/avatars/')]
 		
 		avatars[member.name] = path+'.png'
 		if args == []: break
-	
+	# these were not found
+	for arg in args: avatars[arg] = None
 	return avatars
 
-
-async def avatar_cmd_osu(user_ids, size, max_size):
+async def avatar_cmd_osu(args, size):
 	avatars = {}
-	
+	found = [True]*len(args)
+	for i in range(len(args)):
+		arg = args[i]
+		user_info = osu_api.user_info(arg)
+		if not user_info:
+			found[i] = False
+			continue
+		path = 'cache/osu/avatars/'
+		if 'avatar-guest' in user_info['avatar_url']:
+			path += 'default/0'
+			size = 128
+		else:
+			user_id = user_info['id']
+			avatar_url = user_info['avatar_url']
+			tmp = avatar_url[user_info['avatar_url'].find('?')+1:]
+			avatar_hash = tmp[:tmp.find('.')]
+			path += f'{user_id}/'
+			if not os.path.exists(path): os.mkdir(path)
+			path += f'{avatar_hash}/'
+			if not os.path.exists(path): os.mkdir(path)
+			size = dl_osu_avatar(avatar_url, path, size)
+			path += str(size)
+
+		avatars[user_info['username']] = path+'.png'
+	for i in range(len(args)):
+		if not found[i]:
+			avatars[args[i]] = None
 	return avatars
 
 avatar_options = {
 	"h": [False, 'help'],
 	"o": [False, 'osu'],
 	"a": [False, 'account'],
-	"s": [True, 'size'],
-	"m": [True, 'max_size']
+	"s": [True, 'size']
 }
 
-async def avatar_cmd(ctx, args, osu, account, size, max_size):
+async def avatar_cmd(ctx, args, osu, account, size):
 	if osu:
-		avatars = await avatar_cmd_osu(args, size, max_size)
+		avatars = await avatar_cmd_osu(args, size)
 	else:
-		avatars = await avatar_cmd_discord(args, account, size, max_size)
-	content = 'Avatars of: '
+		avatars = await avatar_cmd_discord(args, account, size)
+	found_avatars_text = ''
+	found_avatars_count = 0
+	not_found_avatars_text = ''
+	not_found_avatars_count = 0
 	files = []
 	for username, path in avatars.items():
-		content += f'{username}, '
-		files.append(discord.File(path))
-	if len(files) == 1:
-		await ctx.channel.send(content=content[:-2], file=files[0])
+		if path:
+			found_avatars_count += 1
+			found_avatars_text += f'{username}, '
+			files.append(discord.File(path))
+		else:
+			not_found_avatars_count += 1
+			not_found_avatars_text += f'{username}, '
+	none_were_found = True
+	if found_avatars_count > 0:
+		none_were_found = False
+		found_avatars_text = ('Avatar of ' if found_avatars_count == 1 else 'Avatars of: ') + found_avatars_text[:-2]
+	if not_found_avatars_count > 0:
+		if not_found_avatars_count == 1:
+			not_found_avatars_text = 'Avatar of ' + not_found_avatars_text[:-2] + ' was not found'
+		else:
+			not_found_avatars_text = 'Avatars of: ' + not_found_avatars_text[:-2]
+			not_found_avatars_text += ' were not found'
+	if none_were_found:
+		avatars_text = 'None of the users provided were found'
 	else:
-		await ctx.channel.send(content=content[:-2], files=files)
+		avatars_text = found_avatars_text + '\n' + not_found_avatars_text
+	if len(files) == 1:
+		await ctx.channel.send(content=avatars_text, file=files[0])
+	else:
+		await ctx.channel.send(content=avatars_text, files=files)
 
 ########################################### avatar ###########################################
 
