@@ -96,7 +96,6 @@ async def recent(ctx):
 
 			...
 		return
-	
 	await recent_cmd(ctx, arguments, *options[1:])
 
 ######### fun #########

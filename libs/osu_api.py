@@ -1,15 +1,6 @@
 import sys, copy
 from math import *
-from libs.utils.debug import *
-from libs.utils.format import *
-from libs.utils.img import *
-from libs.utils.json import *
-from libs.utils.list import *
-from libs.utils.math import *
-from libs.utils.os import *
-from libs.utils.str import *
-from libs.utils.unsorted import *
-from libs.utils.web import *
+from python_utils.utils.all import *
 
 # source https://github.com/Francesco149/pyttanko/blob/master/pyttanko.py
 # from pyttanko import parser, mods_from_str, diff_calc, ppv2
@@ -60,10 +51,9 @@ def extract_user_data(user):
 	}
 	return info
 
+# uses pyttanko (too slow)
 def get_score_stats(user_score, beatmap_id, fc=False, max_combo=None):
 	osu_file = v2.osu_file(beatmap_id)
-	with open('test.txt', 'w+') as f:
-		f.write(osu_file)
 	p = parser()
 	bmap = p.map(osu_file)
 	mods = mods_from_str(''.join(user_score['mods']))
@@ -337,7 +327,6 @@ class OsuAPI:
 		# v1 = OsuAPI_v1()
 		v2 = OsuAPI_v2()
 		self.save = save
-		self.save_dir = (save_dir if save_dir[-1] == '/' else save_dir+'/') if save_dir else 'api_v2_outputs/'
 
 	def user_info(self, user, mode='osu'):
 		if not user.isdigit(): user = user.replace(' ', '%20')
@@ -345,8 +334,8 @@ class OsuAPI:
 		if not raw: return None
 		r = extract_user_data(raw)
 		if self.save:
-			save_json(raw, self.save_dir+'user_info_raw.json')
-			save_json(r, self.save_dir+'user_info.json')
+			save_json(raw, self.save_dir+'/user_info_raw.json')
+			save_json(r, self.save_dir+'/user_info.json')
 		return r
 
 	def user_exists(self, user):
@@ -354,7 +343,7 @@ class OsuAPI:
 
 	def user_recents(self, user, mode='osu', sort_by=None, limit=5):
 		r = v2.user_recents(user, mode if mode else v2.user_info(user, 'osu')['playmode'], limit)
-		if self.save: save_json(r, self.save_dir+'user_recents.json')
+		if self.save: save_json(r, self.save_dir+'/user_recents.json')
 		return r
 
 	def user_recent(self, user, mode='osu', sort_by=None):
@@ -364,8 +353,8 @@ class OsuAPI:
 	def user_scores(self, user, beatmap_id, sort_by='pp'):
 		r = v2.user_scores(user, beatmap_id)
 		if self.save:
-			save_json(r, self.save_dir+'user_scores_raw.json')
-			save_json(r['scores'], self.save_dir+'user_scores.json')
+			save_json(r, self.save_dir+'/user_scores_raw.json')
+			save_json(r['scores'], self.save_dir+'/user_scores.json')
 		return r['scores']
 
 	def user_score(self, user, beatmap_id, sort_by='pp'):
@@ -374,7 +363,7 @@ class OsuAPI:
 
 	def beatmap_info(self, beatmap_id):
 		r = v2.beatmap_info(beatmap_id)
-		if self.save: save_json(r, self.save_dir+'beatmap_info.json')
+		if self.save: save_json(r, self.save_dir+'/beatmap_info.json')
 		return r
 
 	def osu_file(beatmap_id):

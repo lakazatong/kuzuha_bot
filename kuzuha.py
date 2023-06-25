@@ -8,9 +8,11 @@ https://discord.com/api/oauth2/authorize?
 	scope=applications.commands%20bot%20guilds%20guilds.members.read%20identify%20messages.read
 '''
 
-import math
-from libs.osu_api import *
-from libs.perf import *
+import sys
+sys.path.append('libs')
+from python_utils.utils.all import *
+from osu_api import *
+from perf import *
 try:
 	import discord
 except:
@@ -104,7 +106,7 @@ async def load_users():
 		except:
 			cprint('load_users: failed to load '+'cache/users.json', RED)
 	else:
-		cprint(f'load_users: cache/users.json doesn\'t exists', RED)
+		save_json({}, 'cache/users.json')
 
 async def save_users():
 	try:
@@ -310,11 +312,9 @@ def get_member(member_id):
 def get_users():
 	return users
 
-def get_user_info(discord_user_id):
-	return users.get(str(discord_user_id))
-
-async def osuset_cmd(ctx, username):
-	user_info = osu_api.user_info(username)
+async def osuset_cmd(ctx, user):
+	user_info = osu_api.user_info(user)
+	username = user_info['username']
 	if user_info:
 		discord_user_id = str(ctx.message.author.id)
 		if discord_user_id in users:
@@ -322,12 +322,9 @@ async def osuset_cmd(ctx, username):
 		else:
 			users[discord_user_id] = {
 				"osu": {
-					"username": username,
-					"avatar_hash": None
+					"username": username
 				},
 				"discord": {
-					"avatar_hash": None,
-					"display_avatar_hash": None
 				}
 			}
 		await ctx.send(f":white_check_mark: **{ctx.message.author}, your `Bancho` username has been edited to `{username}`**")
@@ -415,7 +412,7 @@ async def card_cmd(ctx, username, mode):
 	if username:
 		await send_user_card(ctx, username, mode)
 	else:
-		user_info = get_user_info(ctx.message.author.id)
+		user_info = users.get(str(ctx.message.author.id))
 		if user_info:
 			await send_user_card(ctx, user_info['osu']['username'], mode)
 		else:
@@ -471,15 +468,46 @@ Options:
 '''
 # recent_help_embed = discord.Embed(description=recent_help_msg, colour = 1752220)
 
-def user_recent_embed_txts(user_recent, mode):
-	beatmap_info = osu_api.beatmap_info(user_recent['beatmap']['id'])
-	stats = user_recent['statistics']
-	score_stats = get_score_stats(user_recent, beatmap_info['id'])
-	pp_value, acc_value, max_combo = score_stats['pp']['total'], score_stats['acc'], score_stats['max_combo']
-	score_stats = score_stats(user_recent, beatmap_info['id'], True, max_combo)
-	pp_value_fc, acc_value_fc = score_stats['pp']['total'], score_stats['acc']
-	mods_text = ''.join(beatmap_info['mods'])
+def user_recent_embed_score_stats(user_recent, beatmap_info):
+	beatmap_id, beatmap_max_combo = beatmap_info['id'], beatmap_info['max_combo']
+	if user_recent['mode'] == 'mania':
+		args = (beatmap_id, user_recent['mods'], user_recent['score'])
+		args_fc = (beatmap_id, user_recent['mods'], 1_000_000) # 1 000 000 is temporary!!!!!!!!!!!!!!!!!!!!!
+	elif user_recent['mode'] == 'taiko':
+		args = (beatmap_id, user_recent['mods'], user_recent['max_combo'], user_recent['statistics']['count_100'],
+				user_recent['statistics']['count_miss'])
+		args_fc = (	beatmap_id, user_recent['mods'], beatmap_max_combo,
+					user_recent['statistics']['count_100'], 0)
+	else:
+		args = (beatmap_id, user_recent['mods'], user_recent['max_combo'], user_recent['statistics']['count_100'],
+				user_recent['statistics']['count_50'], user_recent['statistics']['count_miss'])
+		args_fc = (	beatmap_id, user_recent['mods'], beatmap_max_combo,
+					user_recent['statistics']['count_100'], user_recent['statistics']['count_50'], 0)
+	score_stats = perf(user_recent['mode'], *args)
+	pp_value = score_stats['performance_attributes']['pp']
+	acc_value = score_stats['score']['accuracy']
+	max_combo = score_stats['score']['combo']
+	score_stats = perf(user_recent['mode'], *args_fc)
+	pp_value_fc = score_stats['performance_attributes']['pp']
+	acc_value_fc = score_stats['score']['accuracy']
+	return pp_value, acc_value, max_combo, pp_value_fc, acc_value_fc
+
+def user_recent_embed_txts(index, user_recents, mode):
+	user_recent = user_recents[index]
+	beatmap_id = user_recent['beatmap']['id']
+	beatmap_info = osu_api.beatmap_info(beatmap_id)
+	
+	# uses pyttanko (slow)
+	# score_stats = get_score_stats(user_recent, beatmap_info['id'])
+	# pp_value, acc_value, max_combo = score_stats['pp']['total'], score_stats['acc'], score_stats['max_combo']
+	# score_stats = score_stats(user_recent, beatmap_info['id'], True, max_combo)
+	# pp_value_fc, acc_value_fc = score_stats['pp']['total'], score_stats['acc']
+	# uses osu-tools (faster)
+	pp_value, acc_value, max_combo, pp_value_fc, acc_value_fc = user_recent_embed_score_stats(user_recent, beatmap_info)
+	
+	mods_text = ''.join(user_recent['mods'])
 	if mods_text == '': mods_text = 'No Mod'
+	stats = user_recent['statistics']
 	n300, n100, n50, nMiss = stats['count_300'], stats['count_100'], stats['count_50'], stats['count_miss']
 	nGeki, nKatu = stats['count_geki'], stats['count_katu']
 	match mode:
@@ -489,14 +517,14 @@ def user_recent_embed_txts(user_recent, mode):
 			hits_txt = f'[{n300}/{n100}/{nMiss}]'
 		case 'mania':
 			hits_txt = f'[{nGeki}/{n300}/{nKatu}/{n100}/{n50}/{nMiss}]'
-	beatmap_title = beatmap_info['title']
+	beatmap_title = beatmap_info['beatmapset']['title']
 	beatmap_version = beatmap_info['version']
 	beatmap_sr = beatmap_info['difficulty_rating']
 
 	beatmapset_id = beatmap_info['beatmapset_id']
-	beatmap_id = beatmap_info['id']
 	beatmap_url = f'https://osu.ppy.sh/beatmapsets/{beatmapset_id}#{mode}/{beatmap_id}'
 	map_txt = f'[{beatmap_title} [{beatmap_version}]]({beatmap_url}) +**{mods_text}** [{beatmap_sr:.2f}★]'
+	rank = user_recent['rank']
 	rank_emote = rank_emotes[rank]
 	if rank == 'F':
 		progress_value =(n300+n100+n50+nMiss)/\
@@ -510,7 +538,7 @@ def user_recent_embed_txts(user_recent, mode):
 	user_recent_max_combo = user_recent['max_combo']
 	score_txt = f'▸ {user_recent_score:,} ▸ x{user_recent_max_combo}/{max_combo} ▸ {hits_txt}'
 	try_count = 1
-	for i in range(len(user_recents)):
+	for i in range(index+1, len(user_recents)):
 		if user_recents[i]['beatmap']['id'] == beatmap_id: try_count += 1
 		else: break
 	
@@ -536,8 +564,8 @@ def build_recents_embed(ctx, user_info, user_recents, mode):
 	username_url = username.replace(' ', '%20')
 	country_code = user_info['country_code'].lower()
 	top_txt = f':flag_{country_code}: **Recent {gamemode_texts[mode]} Plays for {username}:**'
-	for user_recent in user_recents:
-		map_txt, pp_txt, score_txt, bottom_txt, beatmap_info = user_recent_embed_txts(user_recent, mode)
+	for i in range(len(user_recents)):
+		map_txt, pp_txt, score_txt, bottom_txt, beatmap_info = user_recent_embed_txts(i, user_recents, mode)
 		description = f'{pp_txt}\n{score_txt}'
 		em = discord.Embed(description = description, colour = server_user.colour)
 		em.set_author(	name = map_txt,
@@ -578,16 +606,17 @@ def build_recents_list_embed(ctx, user_info, user_recents, mode):
 		pages.append(em)
 	return top_txt, pages
 
-async def send_user_recent_card(ctx, username, mode, passed, list_, best, index, search):
-	# username
-	user_info = osu_api.user_info(username)
+async def send_user_recent_card(ctx, user, mode, passed, list_, best, index, search):
+	# user
+	user_info = osu_api.user_info(user)
 	if not user_info:
-		await ctx.send(f':red_circle: **`{username}` not found.**')
+		await ctx.send(f':red_circle: **`{user}` not found.**')
 		return
+	username = user_info['username']
 	# mode
 	if not mode: mode = user_info['playmode']
 	# best
-	user_recents = osu_api.user_recents(username, mode, 100)
+	user_recents = osu_api.user_recents(user, mode, 100)
 	if user_recents == []:
 		await ctx.send(f'**`{username}` has no recent plays in `Bancho` for `{gamemode_texts[mode]}`.**')
 		return
@@ -626,17 +655,17 @@ recent_options = {
 	"i": [True, 'index']
 }
 
-async def recent_cmd(ctx, arguments, options):
-	if len(usernames) == 0:
-		user_info = get_user_info(ctx.message.author.id)
+async def recent_cmd(ctx, arguments, *options):
+	if len(arguments) == 0:
+		user_info = users.get(str(ctx.message.author.id))
 		if user_info:
 			await send_user_recent_card(ctx, user_info['osu']['username'], *options)
 		else:
 			await ctx.channel.send('First use `~osuset <osu! pseudo>`')
 			return
 	else:
-		for username in usernames:
-			await send_user_recent_card(ctx, username, *options)
+		for user in arguments:
+			await send_user_recent_card(ctx, user, *options)
 
 ########################################### recent ###########################################
 
@@ -778,13 +807,11 @@ async def avatar_cmd_discord(args, account, size):
 				path += '/account'
 			else:
 				if 'guilds' in display_avatar:
-					print(display_avatar)
 					base_url, _ = deconstruct_get_url(display_avatar)
 					tmp = base_url[len('https://cdn.discordapp.com/guilds/'):]
 					tmp = tmp[:tmp.find('.')]
 					split = tmp.split('/')
 					guild_id, avatar_hash = split[0], split[4]
-					print(guild_id, avatar_hash)
 					path += f'/guilds/{guild_id}'
 					if not os.path.exists(path): os.mkdir(path)
 				else:
