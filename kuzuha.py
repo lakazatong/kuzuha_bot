@@ -106,6 +106,8 @@ async def load_users():
 		except:
 			cprint('load_users: failed to load '+'cache/users.json', RED)
 	else:
+		if not os.path.exists('cache'):
+			os.system('mkdir cache')
 		save_json({}, 'cache/users.json')
 
 async def save_users():
